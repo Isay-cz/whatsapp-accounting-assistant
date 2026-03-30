@@ -186,7 +186,7 @@ whatsapp-accounting-assistant/
 ### 1. Clonar e instalar
 
 ```bash
-git clone https://github.com/tu-usuario/whatsapp-accounting-assistant
+git clone https://github.com/Isay-cz/whatsapp-accounting-assistant
 cd whatsapp-accounting-assistant
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
