@@ -1,15 +1,27 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
+from functools import lru_cache
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./accounting.db"
-    DEBUG: bool = True
-    SECRET_KEY: str = "supersecretkey"
+    # Base de datos
+    database_url: str
 
-    # Twilio Configuration
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_PHONE_NUMBER: str = ""
+    # Twilio
+    twilio_account_sid: str
+    twilio_auth_token: str
+    twilio_whatsapp_number: str  # ej: whatsapp:+521XXXXXXXXXX
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # LLM
+    llm_provider: str = "ollama"          # "ollama" | "gemini"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1:8b"
+    gemini_api_key: str = ""
 
-settings = Settings()
+    # App
+    debug: bool = False
+
+    class Config:
+        env_file = ".env"
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

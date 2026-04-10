@@ -18,3 +18,16 @@ Thumbs.db
 # IDEs
 .vscode/
 .idea/
+
+# Docker
+.docker/
+
+# Alembic
+db/migrations/versions/*.pyc
+
+# Jupyter
+notebooks/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Logs
+*.log

@@ -1,5 +1,5 @@
 from twilio.rest import Client
-from api.config import settings
+from config import settings
 
 def send_message(to: str, body: str):
     """

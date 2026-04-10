@@ -10,8 +10,6 @@ Sistema que recibe mensajes de WhatsApp reenviados por trabajadores del despacho
 
 El despacho recibe solicitudes de clientes por WhatsApp de forma desestructurada. Los trabajadores reenvían esos mensajes al bot, que los clasifica automáticamente y crea un ticket trazable. El objetivo del MVP es estrecho y deliberado: **recibir → extraer → registrar → confirmar**.
 
-Este proyecto es el entregable central de un sprint de 10 días y forma parte de mi portafolio para búsqueda de beca en Data Science / ML.
-
 ---
 
 ## Stack
@@ -99,16 +97,16 @@ departments ──────┘                        │
 - [x] Schema Pydantic de extracción de entidades
 - [x] Estructura del repositorio
 
-### 🔄 Fase 1 — Fundación (en progreso)
-- [ ] Modelos SQLAlchemy (ORM)
-- [ ] Primera migración Alembic
-- [ ] Webhook `/api/v1/whatsapp` con validación de firma Twilio
-- [ ] Validación de whitelist
-- [ ] Guardado de `raw_messages`
-- [ ] Docker Compose (`api` + `db`)
-- [ ] Smoke test con ngrok
+### ✅ Fase 1 — Fundación
+- [x] Modelos SQLAlchemy (ORM)
+- [x] Primera migración Alembic
+- [x] Webhook `/api/v1/whatsapp` con validación de firma Twilio
+- [x] Validación de whitelist
+- [x] Guardado de `raw_messages`
+- [x] Docker Compose (`api` + `db`)
+- [x] Smoke test con ngrok
 
-### ⬜ Fase 2 — Pipeline NLP
+### 🔄 Fase 2 — Pipeline NLP (en progreso)
 - [ ] Extractor de entidades con Ollama (desarrollo)
 - [ ] Extractor con Gemini Flash (producción)
 - [ ] Validación con Pydantic + manejo de JSON malformado
@@ -143,28 +141,23 @@ departments ──────┘                        │
 ```
 whatsapp-accounting-assistant/
 ├── api/
+│   ├── Dockerfile
+│   ├── requirements.txt
 │   ├── main.py
 │   ├── config.py                  # Settings centralizados con Pydantic
 │   ├── database.py                # Engine async + sesión
 │   ├── routes/
 │   │   ├── webhook.py             # POST /api/v1/whatsapp
-│   │   └── tickets.py             # GET/PATCH /api/v1/tickets (interfaz de gestión)
+│   │   └── tickets.py             # GET/PATCH /api/v1/tickets — próximamente
 │   ├── models/
 │   │   ├── orm.py                 # SQLAlchemy models
-│   │   └── schemas.py             # Pydantic request/response
+│   │   └── schemas.py             # Pydantic request/response — próximamente
 │   ├── services/
 │   │   ├── whatsapp/              # Cliente Twilio + TwiML
-│   │   └── nlp/                   # Pipeline Ollama / Gemini
-│   └── templates/                 # Jinja2 + HTMX (interfaz de gestión)
-│       ├── base.html
-│       ├── tickets/
-│       │   ├── list.html          # Lista de tickets con filtros
-│       │   └── detail.html        # Vista individual + edición inline
-│       └── partials/              # Fragmentos HTMX para actualizaciones parciales
-│           ├── ticket_row.html
-│           └── ticket_status.html
-├── dashboard/                     # Plotly Dash (directivos)
-├── notebooks/                     # Análisis históricos Jupyter
+│   │   └── nlp/                   # Pipeline Ollama / Gemini — próximamente
+│   └── templates/                 # Jinja2 + HTMX — próximamente
+├── dashboard/                     # Plotly Dash (directivos) — próximamente
+├── notebooks/                     # Análisis históricos Jupyter — próximamente
 ├── db/
 │   └── migrations/                # Alembic
 ├── docker-compose.yml
@@ -202,7 +195,7 @@ cp .env.example .env
 ### 3. Levantar servicios
 
 ```bash
-docker compose up -d
+docker compose up
 ```
 
 ### 4. Correr migraciones
@@ -223,16 +216,19 @@ ngrok http 8000
 
 ```bash
 docker compose exec db psql -U devuser -d accounting_bot -c \
-  "INSERT INTO workers (phone_number, name, role) VALUES ('+521XXXXXXXXXX', 'Tu nombre', 'dev');"
+  "INSERT INTO workers (id, phone_number, name, role, is_active) \
+  VALUES (gen_random_uuid(), '+521XXXXXXXXXX', 'Tu nombre', 'dev', true);"
 ```
 
 ---
 
 ## Variables de entorno
 
+Las siguientes variables van en el archivo `.env` en la raíz del proyecto. Las credenciales de la base de datos (`POSTGRES_USER`, `POSTGRES_PASSWORD`) se configuran directamente en `docker-compose.yml` y no son necesarias en `.env`.
+ 
 | Variable | Descripción | Ejemplo |
 |---|---|---|
-| `DATABASE_URL` | Conexión a PostgreSQL | `postgresql://user:pass@db:5432/accounting_bot` |
+| `DATABASE_URL` | Conexión a PostgreSQL | `postgresql://devuser:devpassword@localhost:5432/accounting_bot` |
 | `TWILIO_ACCOUNT_SID` | SID de la cuenta Twilio | `ACxxxxxxxx` |
 | `TWILIO_AUTH_TOKEN` | Token de autenticación Twilio | `xxxxxxxx` |
 | `TWILIO_WHATSAPP_NUMBER` | Número del sandbox | `whatsapp:+14155238886` |

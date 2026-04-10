@@ -1,17 +1,21 @@
 from fastapi import FastAPI
-from api.routes import webhook
-from api.config import settings
+from routes.webhook import router as webhook_router
+from config import get_settings
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+import logging
+
+logging.basicConfig(level=logging.INFO)
+settings = get_settings()
 
 app = FastAPI(
     title="WhatsApp Accounting Assistant",
-    description="Assistant to manage accounting via WhatsApp",
-    version="0.1.0",
-    debug=settings.DEBUG
+    debug=settings.debug,
 )
 
-# Include routers
-app.include_router(webhook.router, prefix="/webhook", tags=["whatsapp"])
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-@app.get("/")
-async def root():
-    return {"message": "WhatsApp Accounting Assistant API is running"}
+app.include_router(webhook_router, prefix="/api/v1")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
