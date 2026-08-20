@@ -65,7 +65,7 @@ Dos tablas únicamente. `Client`, `Department` y `Ticket` se eliminaron del mode
 workers ──► raw_messages
 ```
 
-- `workers`: whitelist de trabajadores. `external_user_id` / `external_department_id` son referencias externas (UUID de las tablas `users`/`departments` del sistema de tickets, sin FK real) — stopgap manual mientras no exista el sync automático (ver CLAUDE.md, Pendientes).
+- `workers`: whitelist de trabajadores. Se mantiene sola: un task en segundo plano hace poll de `GET /internal/workers` del sistema de tickets cada `WORKER_SYNC_INTERVAL_SECONDS` y reconcilia la tabla completa (ver CLAUDE.md, decisión #15). `external_user_id` es una referencia externa (el UUID de `users` del sistema de tickets, sin FK real) que se manda como `created_by` al crear un ticket. `phone_number` se guarda normalizado a solo dígitos (decisión #18).
 - `raw_messages`: payload crudo del webhook, idempotente por `wamid`. `external_ticket_id` referencia (sin FK) el ticket creado del otro lado.
 
 ---
@@ -102,7 +102,8 @@ CLAUDE.md
 - Docker y Docker Compose
 - Python 3.12+
 - Cuenta de Meta Business Manager con número de WhatsApp Cloud API configurado
-- Acceso a la red Docker `cgho_net` (la crea el stack de CGHO Sistema de Tickets — ver Pendientes en `CLAUDE.md`, ese repo aún no la declara `external: true`)
+- El stack de CGHO Sistema de Tickets levantado: es el dueño de la red Docker `cgho_net` y la crea al arrancar, además de proveer Postgres y Redis. Si no está arriba, `docker compose up` de este repo falla con `network cgho_net not found`.
+- La base `bot_db` y el rol `bot_role` creados en ese Postgres (script `ops/bot-db-bootstrap.sql` del repo del sistema de tickets)
 
 ### 1. Variables de entorno
 
@@ -175,7 +176,8 @@ Ver `.env.example` para la lista completa. Se inyectan por Docker Compose (`envi
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Extracción de título |
 | `META_APP_SECRET` / `META_VERIFY_TOKEN` / `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID` | WhatsApp Cloud API |
 | `INTERNAL_API_TOKEN` | Token compartido con el sistema de tickets — solo saliente |
-| `TICKET_SYSTEM_BASE_URL` | Base URL de la API del sistema de tickets |
+| `TICKET_SYSTEM_BASE_URL` | Base URL de la API del sistema de tickets. Es `http://tickets-api:8000`, **no** `http://api:8000`: este stack también nombra `api` a su propio servicio y ese nombre resuelve al contenedor local |
+| `WORKER_SYNC_INTERVAL_SECONDS` | Cada cuánto se refresca la whitelist (default 300) |
 
 ---
 

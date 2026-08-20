@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Sistema de tickets (CGHO Sistema de Tickets)
     internal_api_token: str = ""
     ticket_system_base_url: str = ""
+    # Cada cuánto se re-consulta el roster de trabajadores. La ventana de
+    # retraso es aceptable: son ~22 personas y las altas/bajas son raras.
+    worker_sync_interval_seconds: int = 300
 
     # App
     debug: bool = False

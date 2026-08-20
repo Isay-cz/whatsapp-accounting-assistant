@@ -12,6 +12,7 @@ from models.orm import RawMessage, Worker
 from models.schemas import InteractiveReply
 from services.alerts import AlertNotifier
 from services.conversation import ConversationFlow
+from services.conversation.deps import active_worker_by_phone_stmt
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -122,7 +123,7 @@ async def _handle_messages(
             continue  # ya procesado — Meta reintenta entregas hasta 7 días
 
         result = await db.execute(
-            select(Worker).where(Worker.phone_number == from_number, Worker.is_active == True)
+            active_worker_by_phone_stmt(from_number)
         )
         worker = result.scalar_one_or_none()
         if worker is None:

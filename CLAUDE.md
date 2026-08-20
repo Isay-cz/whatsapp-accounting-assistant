@@ -18,6 +18,7 @@ Bot que recibe mensajes de clientes reenviados por trabajadores del despacho ví
 - **Mensajería:** WhatsApp Cloud API directa (Meta), **no Twilio** — decisión explícita para evitar el cargo adicional de Twilio, asumiendo el trabajo extra de configuración propia.
 - **LLM:** DeepSeek, modelo `deepseek-v4-flash` (el alias `deepseek-chat` se retiró el 24 de julio de 2026 — no usar ese nombre). Posible migración a otro proveedor después; la extracción debe quedar detrás de una sola interfaz/módulo para que cambiar de proveedor no toque el resto del código.
 - **Deploy:** Docker Compose, **stack independiente** del sistema de tickets — ciclo de deploy propio, porque el bot itera más seguido (prompts, proveedor LLM) y no debe requerir tocar el stack de producción del sistema de tickets. Se conecta a Postgres/Redis compartidos vía red Docker externa (`cgho_net`); **no define esos servicios en su propio `docker-compose.yml`.**
+- **Exposición pública:** Cloudflare Tunnel (`cloudflared`) como único punto de entrada al webhook — `api` no publica ningún puerto al host. Configuración local (`cloudflared/config.yml`, versionada) en vez de reglas de ingreso administradas solo desde el dashboard de Cloudflare, para mantener las decisiones de ruteo dentro del repo. `cloudflared` vive en la red interna del stack del bot — no necesita `cgho_net`, solo reenvía hacia `api`.
 
 ## Convenciones
 
@@ -31,20 +32,24 @@ Bot que recibe mensajes de clientes reenviados por trabajadores del despacho ví
 
 ## Decisiones de arquitectura ya tomadas (no reabrir sin discusión explícita)
 
-1. **Nunca acceso directo a las tablas del sistema de tickets, ni viceversa.** Toda comunicación es vía API HTTP interna, autenticada con un token compartido (`INTERNAL_API_TOKEN`, variable de entorno en ambos stacks, nunca en código ni en docs). Aunque Postgres corre en el mismo proceso físico, cada sistema tiene su propio rol de base de datos sin permisos sobre las tablas del otro. El uso de `INTERNAL_API_TOKEN` es **solo saliente**: este bot lo manda como `Authorization: Bearer` al llamar a la API del sistema de tickets; no expone ningún endpoint que el sistema de tickets necesite invocar de vuelta.
+1. **Nunca acceso directo a las tablas del sistema de tickets, ni viceversa.** Toda comunicación es vía API HTTP interna, autenticada con un token compartido (`INTERNAL_API_TOKEN`, variable de entorno en ambos stacks, nunca en código ni en docs). Aunque Postgres corre en el mismo proceso físico, cada sistema tiene su propio rol de base de datos sin permisos sobre las tablas del otro. El uso de `INTERNAL_API_TOKEN` es **solo saliente**: este bot lo manda como `Authorization: Bearer` al llamar a la API del sistema de tickets; no expone ningún endpoint que el sistema de tickets necesite invocar de vuelta (ver decisión #15 — es la razón por la que la sync de whitelist es *pull*, no *push*).
 2. **`tickets`, `clients`, `departments` no se modelan en este repo.** Se eliminaron los modelos `Ticket`/`Client`/`Department` heredados de la primera versión (Twilio) — esos datos viven solo en el sistema de tickets.
 3. **Postgres y Redis compartidos a nivel de proceso, no de datos.** Un solo servidor de cada uno corriendo en la VPS (ahorra recursos en el CX32 de 8GB), pero bases de datos/namespaces separados — nunca queries cruzados entre los dos sistemas.
 4. **Cloud API de Meta, no Twilio.** Requiere cuenta de Meta Business Manager verificada, lo cual depende de tener un sitio web activo — engancha con la resolución del dominio `cghocontadores.mx`.
-5. **El nombre del cliente nunca se extrae vía LLM.** Siempre se pregunta explícitamente al trabajador después de cerrada la ventana del buffer (no antes, no mezclado con la extracción del título) — la respuesta de texto libre se manda tal cual al endpoint de búsqueda de clientes del sistema de tickets. Si no contesta antes del timeout, el ticket se crea con `client_id = null`. Nunca se asigna un cliente adivinado — una asignación automática silenciosamente equivocada es peor que un ticket temporalmente sin cliente.
+5. **El nombre del cliente nunca se extrae vía LLM.** Siempre se pregunta explícitamente al trabajador después de cerrada la ventana del buffer (no antes, no mezclado con la extracción del título) — la respuesta de texto libre se manda tal cual al endpoint de búsqueda de clientes del sistema de tickets, que regresa máximo 9 coincidencias. El bot arma la lista interactiva con esas coincidencias más una opción fija **"Sin cliente"** (10 elementos en total, el máximo de WhatsApp) — así el trabajador no depende del timeout cuando ya sabe que es trabajo interno o no hay cliente claro. Si aun así no contesta antes del timeout, el ticket se crea igual con `client_id = null`. Nunca se asigna un cliente adivinado — una asignación automática silenciosamente equivocada es peor que un ticket temporalmente sin cliente.
 6. **El LLM se llama siempre, una vez por bloque de buffer.** No hay un filtro previo que decida si "vale la pena" llamarlo. El volumen y costo (estimado en menos de US$1/mes con `deepseek-v4-flash` al volumen del despacho) no justifican la complejidad de mantener un clasificador propio, y un filtro mal calibrado tiene más riesgo de error silencioso que llamar siempre al LLM.
 7. **Fallback determinista si el LLM falla.** Si la llamada de extracción falla o tarda, el título cae a los primeros ~60 caracteres del mensaje crudo. La descripción (mensajes crudos concatenados, con o sin resumen de entidades antepuesto) no depende del LLM para existir. La creación del ticket nunca queda bloqueada por una falla del LLM — la función de extracción nunca lanza excepción hacia arriba, degrada internamente.
-8. **`department_id` del ticket = departamento del trabajador que reenvía.** Nunca se infiere del contenido del mensaje. Si queda mal asignado, se corrige después con el mecanismo de traspaso entre departamentos que ya existe en el sistema de tickets — no es responsabilidad del bot acertar esto. Ver decisión #14 para cómo se resuelve mientras no exista el sync trabajador↔departamento.
+8. **`department_id` del ticket = departamento del trabajador que reenvía — pero el bot nunca lo maneja.** Se deriva enteramente server-side en el sistema de tickets a partir de `created_by`. El bot no manda `department_id`, no lo guarda localmente, no hace ninguna llamada de seguimiento para asociarlo — es responsabilidad exclusiva del otro sistema. Si queda mal asignado, se corrige después con el mecanismo de traspaso entre departamentos que ya existe ahí.
 9. **`priority` siempre se confirma por botones (alta/media/baja) con timeout de 1 minuto.** Si no contesta, se manda "media" por default — nunca se deja sin valor, porque la columna es `NOT NULL` del otro lado.
 10. **Deduplicación por `wamid`.** Meta reintenta entregas fallidas hasta 7 días con frecuencia decreciente — todo mensaje se verifica contra `raw_messages` antes de procesar.
 11. **Responder 200 rápido, siempre.** El handler del webhook nunca hace trabajo pesado de forma síncrona (extracción LLM, llamadas al sistema de tickets) — se delega a background task.
 12. **Config de un solo mecanismo.** La versión anterior (Twilio) tenía tres formas distintas de cargar `.env` que no se comunicaban entre sí (interpolación de Compose, `env_file` de pydantic inalcanzable dentro del contenedor, y un parche manual en `alembic/env.py`) — de ahí que hoy sea una sola fuente de verdad, sin excepciones.
 13. **Sin interfaz de gestión de tickets ni dashboard ejecutivo en este repo.** Quedaron redundantes con las vistas Operación/Dirección del sistema de tickets y se eliminaron del roadmap original.
-14. **Resolución temporal de `created_by` y `department_id`.** Mientras no exista el sync `users.bot_enabled` + `whatsapp_phone` del lado del sistema de tickets, `Worker` guarda dos referencias externas pobladas a mano por un admin: `external_user_id` (el `users.id` del sistema de tickets correspondiente al trabajador, usado como `created_by` al crear el ticket) y `external_department_id` (el `departments.id` correspondiente, usado para asociar el ticket al departamento de quien reenvía). Son columnas UUID nullable **sin FK real** — referencian filas que viven en la base del otro sistema. Este es un stopgap explícito, no la solución final; ver Pendientes.
+14. **`created_by` sale de `Worker.external_user_id`.** `Worker` guarda `external_user_id` (el `users.id` del sistema de tickets correspondiente al trabajador), que se manda como `created_by` al crear el ticket. Es una columna UUID nullable **sin FK real** — referencia una fila que vive en la base del otro sistema. Ya **no** se captura a mano: la llena el poll de la whitelist (decisión #15) a partir de `user_id` del roster. Si un `Worker` llega sin `external_user_id`, el flujo aborta la creación y le pide al trabajador que avise a un administrador — nunca se inventa un actor.
+15. **La sincronización de la whitelist es *pull*, no *push*.** El bot hace poll periódico (intervalo configurable, default ~5 min) contra `GET /internal/workers` en el sistema de tickets, y hace upsert local sobre `workers` con lo que regresa — nunca al revés. Es consecuencia directa de la decisión #1: el bot no expone ningún endpoint entrante más allá del webhook de Meta. La ventana de hasta un intervalo de retraso es aceptable dado el volumen (~22 personas, altas/bajas poco frecuentes). El poll es autocurativo por diseño — si se pierde un ciclo, el siguiente lo corrige, sin necesidad de reintentos ni botón de resync manual del otro lado. **Implementado** en `services/ticket_system/sync.py`, arrancado como task del `lifespan` en `main.py`; intervalo en `WORKER_SYNC_INTERVAL_SECONDS` (default 300s). Cada ciclo reconcilia la tabla completa: da de alta a los nuevos, recalcula `is_active` como `bot_enabled AND is_active`, y desactiva a los que ya no aparecen en el roster (a alguien le borraron el número del otro lado). Se desactivan en vez de borrarse porque `raw_messages` los referencia por FK. El loop nunca muere por un error: una caída de red se loguea y el siguiente ciclo reintenta.
+16. **La confirmación al trabajador usa `ticket_number` (entero secuencial), no el `id` UUID.** El sistema de tickets lo regresa en la respuesta de `POST /internal/tickets` específicamente para esto — un UUID es incómodo de leer o repetir por WhatsApp.
+17. **Exposición pública del webhook vía Cloudflare Tunnel, no puerto publicado directo en el host.** `cloudflared` corre como contenedor adicional en el mismo `docker-compose.yml`, con configuración local (`cloudflared/config.yml`) apuntando solo hacia `api` — no toca `cgho_net`. Requiere un hostname con DNS gestionado por Cloudflare para el túnel nombrado de producción; mientras se resuelve `cghocontadores.mx`, un *quick tunnel* sin dominio sirve para seguir probando, como ya se hizo antes.
+18. **Los teléfonos se guardan y se comparan normalizados a dígitos.** El sistema de tickets guarda E.164 con `+` y Meta manda el número sin él, así que `workers.phone_number` guarda solo dígitos y el sync normaliza al hacer el upsert. Además, la búsqueda de whitelist compara **los últimos 10 dígitos** y no la cadena completa: los celulares mexicanos llegan como `52XXXXXXXXXX` o `521XXXXXXXXXX` según el contexto, y comparar todo produciría falsos negativos con los que el bot ignoraría a un trabajador legítimo. Vale para un despacho 100% mexicano; **confirmar contra números reales** cuando el número de Cloud API esté verificado en producción. Ver `services/ticket_system/sync.py`.
 
 ## Estructura del repositorio (objetivo)
 
@@ -66,13 +71,16 @@ whatsapp-bot/
 │   │   ├── llm/                  # extracción — interfaz única, proveedor intercambiable
 │   │   ├── buffer/               # debounce genérico sobre Redis (TTL por llave)
 │   │   ├── conversation/         # orquesta el flujo post-buffer (cliente, prioridad, creación)
-│   │   ├── ticket_system/        # cliente HTTP hacia la API del sistema de tickets
+│   │   ├── ticket_system/        # client.py: cliente HTTP hacia /internal del sistema de
+│   │   │                         # tickets. sync.py: poll de /internal/workers (decisión #15)
 │   │   └── alerts/               # notificador de eventos de alerta de Meta (stub de log por ahora)
 │   └── core/
 │       └── security.py          # firma X-Hub-Signature-256 + header de token interno saliente
+├── cloudflared/
+│   └── config.yml                # ingress del túnel, versionado — credenciales fuera del repo
 ├── db/
 │   └── migrations/
-├── docker-compose.yml            # solo `api` — NO define db/redis, se une a `cgho_net` externa
+├── docker-compose.yml            # api + cloudflared — NO define db/redis, se une a `cgho_net` externa
 ├── docker-compose.test.yml       # postgres/redis desechables, solo para correr pruebas
 ├── .env.example
 ├── docs/
@@ -86,24 +94,22 @@ whatsapp-bot/
 1. Webhook recibe mensaje → valida firma de Meta → valida whitelist (`workers`) → guarda `raw_message` (idempotente por `wamid`) → responde 200.
 2. Buffer en Redis (TTL 30-60s por trabajador) agrupa mensajes consecutivos del mismo remitente.
 3. Al cerrar la ventana: una llamada a `deepseek-v4-flash` genera el título (con fallback determinista si falla).
-4. Se pregunta "¿Cliente?" (texto libre) → búsqueda vía API del sistema de tickets → 0/1/N resultados → lista interactiva si hay ambigüedad → timeout → `client_id = null` si no contesta.
+4. Se pregunta "¿Cliente?" (texto libre) → `GET /internal/clients/search` (máximo 9 resultados) → lista interactiva con las coincidencias + opción fija "Sin cliente" → timeout → `client_id = null` si no contesta. **Siempre se pregunta, incluso con una sola coincidencia**: escogerla automáticamente sería adivinar (decisión #5). Con cero coincidencias se pasa directo a prioridad — una lista de un solo elemento no aporta nada.
 5. Se pregunta prioridad (botones alta/media/baja) → timeout 1 min → default "media".
-6. Llamada a la API de creación de tickets del sistema de tickets: `title`, `description`, `client_id`, `priority`, `created_by` (`Worker.external_user_id`, nunca "Sistema"). Si `Worker.external_department_id` está poblado, llamada de seguimiento para asociar el departamento.
-7. Confirmación al trabajador con el número de ticket.
+6. `POST /internal/tickets` con `title`, `description`, `client_id`, `priority`, `created_by` (`Worker.external_user_id`, nunca "Sistema"). El sistema de tickets deriva `department_id` por su cuenta — el bot no manda ni gestiona ese dato. Si el creador no tiene departamento (solo pasa con Dirección General), del otro lado cae en Gestión Operativa.
+7. Confirmación al trabajador con `ticket_number` (ej. "Ticket #482 creado"), no el UUID.
+
+Aparte del flujo por mensaje: un task del `lifespan` hace poll cada `WORKER_SYNC_INTERVAL_SECONDS` (default 300) contra `GET /internal/workers` del sistema de tickets para mantener `workers` sincronizado (decisión #15).
 
 ## Pendientes que bloquean piezas específicas
 
 | Pendiente | Dónde se resuelve | Qué bloquea |
 |---|---|---|
-| Endpoint de búsqueda de clientes | Sistema de tickets | Paso 4 del flujo |
-| Endpoint de creación de tickets para servicio externo autenticado | Sistema de tickets | Paso 6 del flujo |
-| Campo `bot_enabled` + `whatsapp_phone` en `users`, pantalla de administración y mecanismo de sync (async vía `arq` + botón de resync manual) | Sistema de tickets | Sincronización de `workers` — mientras tanto, altas/bajas manuales |
-| `Worker.external_user_id` es un stopgap manual (cargado a mano por un admin) | Este repo, temporal | `created_by` al crear tickets — reemplazar por resolución dinámica por teléfono en cuanto exista el sync de arriba |
-| `Worker.external_department_id` es un stopgap manual (cargado a mano por un admin) | Este repo, temporal | Asociación de departamento al crear tickets — mismo reemplazo que `external_user_id` |
-| Contrato real de cómo el sistema de tickets asocia un departamento a un ticket recién creado (¿mismo POST de creación, o llamada aparte a `ticket_departments`?) no está definido del otro lado | Sistema de tickets | La llamada `ticket_system.add_department(...)` de este repo es un diseño provisional, no verificado contra un endpoint real |
-| Red Docker compartida `cgho_net` debe declararse `external: true` en `cgho-ops/docker-compose.yml` | Sistema de tickets (infra) | `docker compose up` de este repo no puede unirse a la red hasta que exista del otro lado |
+| ~~Endpoints `/internal` del sistema de tickets~~ | — | **Resuelto.** `GET /internal/clients/search`, `POST /internal/tickets` y `GET /internal/workers` ya existen y están probados de punta a punta |
+| ~~Red Docker compartida `cgho_net`~~ | — | **Resuelto.** El diagnóstico original era incorrecto: no faltaba `external: true` del otro lado, faltaba `name: cgho_net` en el compose de cgho-ops, que es el dueño de la red y la crea. Aquí sigue siendo `external: true`. Consecuencia: cgho-ops se levanta primero |
+| Formato real de los números de WhatsApp de los trabajadores | Producción | Confirmar la regla de match por últimos 10 dígitos (decisión #18) contra números reales cuando el número de Cloud API esté verificado |
 | Verificación de Meta Business Manager (requiere sitio web activo) | Dominio `cghocontadores.mx` | Alta del número de WhatsApp Cloud API |
-| CHECK constraint de `priority` (vocabulario ya confirmado: alta/media/baja, default media) | Sistema de tickets | No bloquea — el bot puede empezar a mandar valores válidos desde ya |
+| NS de `cghocontadores.mx` (o un subdominio) apuntando a Cloudflare | Dominio `cghocontadores.mx` | Túnel nombrado estable para producción — mientras tanto, *quick tunnel* sin dominio |
 | Proveedor de canal para eventos de alerta de Meta (Telegram vs. correo, no decidido) | Este repo | `services/alerts/` hoy solo loguea; no hay integración real de notificación |
 
 ## Fases

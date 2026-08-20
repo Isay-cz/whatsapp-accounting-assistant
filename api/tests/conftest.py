@@ -69,7 +69,6 @@ async def worker(db_session: AsyncSession) -> Worker:
         name="Trabajador de prueba",
         is_active=True,
         external_user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
-        external_department_id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
     )
     db_session.add(w)
     await db_session.flush()

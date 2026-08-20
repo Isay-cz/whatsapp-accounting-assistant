@@ -11,16 +11,19 @@ from database import Base
 
 class Worker(Base):
     """
-    Whitelist de trabajadores del despacho. Se mantiene sincronizada desde
-    users.bot_enabled + whatsapp_phone del sistema de tickets — mecanismo que
-    todavía no existe del otro lado (ver CLAUDE.md, Pendientes), así que hoy
-    se edita a mano.
+    Whitelist de trabajadores del despacho. Se mantiene sincronizada por poll
+    contra GET /internal/workers del sistema de tickets, que la arma con
+    users.bot_enabled + whatsapp_phone (ver CLAUDE.md, decisión #15). El
+    `is_active` local se calcula como `bot_enabled AND is_active` del payload.
 
-    external_user_id / external_department_id son referencias externas al
-    sistema de tickets (UUID de sus tablas `users` / `departments`), sin FK
-    real porque viven en otra base de datos. Son un stopgap manual para poder
-    mandar `created_by` y el departamento al crear un ticket mientras no
-    exista el sync — ver CLAUDE.md, decisión #14.
+    external_user_id es una referencia externa al sistema de tickets (el UUID
+    de su tabla `users`), sin FK real porque vive en otra base de datos. Es lo
+    que se manda como `created_by` al crear un ticket, para que el actor de
+    todos los eventos sea una persona real y nunca "el bot".
+
+    phone_number se guarda normalizado a solo dígitos: el sistema de tickets
+    manda E.164 con `+` y Meta manda el número sin `+`. Ver services/
+    ticket_system/sync.py.
     """
     __tablename__ = "workers"
 
@@ -30,7 +33,6 @@ class Worker(Base):
     role: Mapped[str | None] = mapped_column(String(60))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     external_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    external_department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
     raw_messages: Mapped[list["RawMessage"]] = relationship(back_populates="worker")

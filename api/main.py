@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,7 +12,7 @@ from services.buffer import get_redis, message_buffer, session
 from services.conversation import ConversationFlow, lookup_active_worker_by_phone
 from services.llm import get_extractor
 from services.meta import get_meta_client
-from services.ticket_system import get_ticket_system_client
+from services.ticket_system import get_ticket_system_client, worker_sync_loop
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,12 +22,13 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     redis = get_redis(settings)
+    ticket_system = get_ticket_system_client(settings)
     conversation_flow = ConversationFlow(
         redis=redis,
         settings=settings,
         llm=get_extractor(settings),
         meta=get_meta_client(settings),
-        ticket_system=get_ticket_system_client(settings),
+        ticket_system=ticket_system,
         worker_lookup=lookup_active_worker_by_phone,
     )
     app.state.redis = redis
@@ -47,7 +49,20 @@ async def lifespan(app: FastAPI):
         recovered_sessions,
     )
 
+    # Poll de la whitelist contra el sistema de tickets (CLAUDE.md, decisión
+    # #15). Es la única forma en que `workers` se mantiene al día: el sistema
+    # de tickets nunca le pega a este bot.
+    sync_task = asyncio.create_task(
+        worker_sync_loop(ticket_system, settings.worker_sync_interval_seconds)
+    )
+
     yield
+
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
 
     await redis.aclose()
 

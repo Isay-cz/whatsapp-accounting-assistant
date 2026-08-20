@@ -15,10 +15,12 @@ services:
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
       META_API_VERSION: ${META_API_VERSION:-v21.0}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
-      TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL}
+      TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
+      WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
       DEBUG: ${DEBUG:-false}
-    ports:
-      - "8000:8000"
+    # Sin `ports`: el webhook se expone por Cloudflare Tunnel, no publicando un
+    # puerto al host (CLAUDE.md, decisión #17). Publicarlo además chocaba con
+    # lo que ya escucha en 8000 en el servidor.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - cgho_net
@@ -28,11 +30,11 @@ services:
 # usa una base de datos y un rol de Postgres separados, y namespaced sus llaves
 # de Redis con el prefijo `bot:`. Ver CLAUDE.md, decisión #3.
 #
-# `cgho_net` debe existir como red externa antes de `docker compose up` —
-# hoy en día el docker-compose.yml de cgho-ops declara su red `cgho_net` como
-# `driver: bridge` sin `external: true`, así que unirse desde este repo va a
-# fallar hasta que ese archivo (en el otro repo) se actualice para exponerla.
-# Ver CLAUDE.md, sección Pendientes.
+# `cgho_net` la crea el stack de cgho-ops, que fija su nombre con `name:` en su
+# propio docker-compose.yml. Por eso aquí es `external: true`: este stack se
+# une a una red que no administra. Consecuencia operativa: cgho-ops se levanta
+# primero. Si no está arriba, `docker compose up` de este repo falla con
+# "network cgho_net not found", que es el error correcto.
 networks:
   cgho_net:
     external: true
