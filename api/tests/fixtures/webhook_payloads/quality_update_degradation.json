@@ -1,0 +1,20 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba_id_1",
+      "changes": [
+        {
+          "field": "phone_number_quality_update",
+          "value": {
+            "event": "DOWNGRADE",
+            "old_limit": "TIER_250",
+            "current_limit": "TIER_50",
+            "display_phone_number": "16505551111",
+            "max_daily_conversations_per_business": "TIER_50"
+          }
+        }
+      ]
+    }
+  ]
+}

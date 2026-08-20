@@ -1,0 +1,14 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba_id_1",
+      "changes": [
+        {
+          "field": "calls",
+          "value": { "event": "connect", "call_id": "wacid.some_call_id" }
+        }
+      ]
+    }
+  ]
+}

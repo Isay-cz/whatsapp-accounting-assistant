@@ -1,0 +1,29 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba_id_1",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "16505551111",
+              "phone_number_id": "123456123"
+            },
+            "messages": [
+              {
+                "id": "ABGGFlA5Fpb",
+                "from": "16315551181",
+                "timestamp": "1504902999",
+                "type": "text",
+                "text": { "body": "mensaje sin contacts ni user_id, campos opcionales ausentes" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

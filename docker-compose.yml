@@ -1,39 +1,38 @@
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: accounting_bot
-      POSTGRES_USER: devuser
-      POSTGRES_PASSWORD: devpassword
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"          # solo expuesto localmente, en producción quitar
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devuser -d accounting_bot"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   api:
     build: ./api
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy  # espera que Postgres esté listo
-    volumes: 
+    volumes:
       - ./api:/app
     environment:
-      DATABASE_URL: postgresql://devuser:devpassword@db:5432/accounting_bot
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
-      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
-      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
+      META_API_VERSION: ${META_API_VERSION:-v21.0}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+      TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL}
       DEBUG: ${DEBUG:-false}
     ports:
       - "8000:8000"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - cgho_net
 
-volumes:
-  pgdata:
+# Postgres y Redis NO se definen aquí — corren en el stack de cgho-ops (CGHO
+# Sistema de Tickets) y se comparten a nivel de proceso, no de datos: este bot
+# usa una base de datos y un rol de Postgres separados, y namespaced sus llaves
+# de Redis con el prefijo `bot:`. Ver CLAUDE.md, decisión #3.
+#
+# `cgho_net` debe existir como red externa antes de `docker compose up` —
+# hoy en día el docker-compose.yml de cgho-ops declara su red `cgho_net` como
+# `driver: bridge` sin `external: true`, así que unirse desde este repo va a
+# fallar hasta que ese archivo (en el otro repo) se actualice para exponerla.
+# Ver CLAUDE.md, sección Pendientes.
+networks:
+  cgho_net:
+    external: true

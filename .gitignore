@@ -6,10 +6,13 @@ __pycache__/
 env/
 venv/
 .env
+.env.*
+!.env.example
 
 # Databases
 *.db
 *.sqlite3
+*.rdb
 
 # OS
 .DS_Store

@@ -1,0 +1,39 @@
+# Postgres y Redis desechables, solo para correr `pytest` en local/CI.
+# Completamente autocontenido — sin `cgho_net`, sin volúmenes nombrados, en
+# puertos distintos a los de desarrollo para no chocar con nada.
+#
+# Uso:
+#   docker compose -f docker-compose.test.yml up -d
+#   cd api && DATABASE_URL=postgresql://bot_test:bot_test@localhost:55432/bot_test \
+#             REDIS_URL=redis://localhost:56379/1 \
+#             alembic upgrade head && pytest
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: bot_test
+      POSTGRES_PASSWORD: bot_test
+      POSTGRES_DB: bot_test
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot_test -d bot_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis-test:
+    image: redis:7-alpine
+    restart: "no"
+    ports:
+      - "56379:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

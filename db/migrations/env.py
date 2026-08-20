@@ -7,10 +7,10 @@ from alembic import context
 import sys
 import os
 
-# ── Cargar variables de entorno desde .env (para desarrollo local) ──────────
-from dotenv import load_dotenv
+# DATABASE_URL llega del entorno del proceso que invoca `alembic` (Docker
+# Compose en runtime, o el shell de quien corre las migraciones en local/CI)
+# — nunca se carga un .env aquí. Ver CLAUDE.md, decisión #12.
 _root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
-load_dotenv(os.path.join(_root_dir, '.env'))
 
 # ── Agregar carpeta raíz y carpeta api al path ───────────────────────────────
 sys.path.insert(0, os.path.abspath(_root_dir))
