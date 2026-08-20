@@ -1,0 +1,50 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba_id_1",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "16505551111", "phone_number_id": "123456123" },
+            "messages": [
+              {
+                "id": "ABGGFlA5Fpc",
+                "from": "16315551181",
+                "timestamp": "1504903000",
+                "type": "text",
+                "text": { "body": "primer mensaje del primer entry" }
+              }
+            ]
+          }
+        },
+        {
+          "field": "account_alerts",
+          "value": {
+            "entity_id": 123456,
+            "alert_type": "OBA_APPROVED",
+            "entity_type": "WABA",
+            "alert_status": "NONE",
+            "alert_severity": "INFORMATIONAL",
+            "alert_description": "Sample alert description, informational in nature with no status"
+          }
+        }
+      ]
+    },
+    {
+      "id": "waba_id_2",
+      "changes": [
+        {
+          "field": "security",
+          "value": {
+            "event": "PIN_CHANGED",
+            "requester": "1000",
+            "display_phone_number": "16505551111"
+          }
+        }
+      ]
+    }
+  ]
+}

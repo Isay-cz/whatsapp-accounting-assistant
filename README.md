@@ -1,28 +1,25 @@
 # WhatsApp Accounting Assistant
 
-> **Sprint de desarrollo activo** — Este repositorio documenta la construcción iterativa de un sistema de gestión de tickets para un despacho contable. Cada fase está documentada con las decisiones técnicas tomadas y su justificación.
-
-Sistema que recibe mensajes de WhatsApp reenviados por trabajadores del despacho, extrae información estructurada con un LLM, genera tickets en PostgreSQL y expone métricas en tiempo real a través de un dashboard ejecutivo y una interfaz de gestión para trabajadores.
+Bot que recibe mensajes de clientes reenviados por trabajadores de un despacho contable vía WhatsApp, extrae un título con un LLM, confirma cliente y prioridad, y crea el ticket en **CGHO Sistema de Tickets** (repo hermano, gestión de tickets/clientes/departamentos). Este repo es una capa delgada de captura + extracción — no gestiona tickets ni tiene interfaz propia; ver `CLAUDE.md` para el detalle completo de alcance y decisiones de arquitectura.
 
 ---
 
 ## Contexto
 
-El despacho recibe solicitudes de clientes por WhatsApp de forma desestructurada. Los trabajadores reenvían esos mensajes al bot, que los clasifica automáticamente y crea un ticket trazable. El objetivo del MVP es estrecho y deliberado: **recibir → extraer → registrar → confirmar**.
+Los trabajadores reenvían al bot los mensajes que reciben de clientes por WhatsApp. El bot agrupa esos mensajes en bloques (debounce), extrae un título con un LLM, confirma cliente y prioridad por WhatsApp, y crea el ticket vía la API del sistema de tickets. Objetivo estrecho y deliberado: **recibir → agrupar → extraer → confirmar → crear ticket**.
 
 ---
 
 ## Stack
 
-| Capa | Tecnología | Justificación |
-|---|---|---|
-| Mensajería | Twilio WhatsApp Sandbox → Twilio prod | Sin aprobación Meta requerida; el volumen del despacho no justifica Cloud API directa |
-| Backend | FastAPI + asyncpg | Async nativo para I/O concurrente con Twilio + DB + LLM |
-| Pipeline NLP | Ollama (dev) / Gemini Flash (prod) | Costo cero en desarrollo; misma interfaz abstraída por variable de entorno |
-| Base de datos | PostgreSQL 16 + Alembic | On-premise, datos sensibles del despacho no salen a nube |
-| Gestión de tickets | FastAPI + HTMX | Interactividad sin frontend separado; se monta sobre el mismo servidor FastAPI |
-| Dashboard ejecutivo | Plotly Dash | Integración directa con PostgreSQL, sin capa intermedia |
-| Deploy | Docker Compose | Mismo `docker-compose.yml` en desarrollo y producción |
+| Capa | Tecnología |
+|---|---|
+| Mensajería | WhatsApp Cloud API (Meta) directa — no Twilio |
+| Backend | FastAPI (async) + SQLAlchemy 2.x + Alembic |
+| Base de datos | PostgreSQL — compartido a nivel de proceso con CGHO Sistema de Tickets, base de datos y rol propios |
+| Buffer / sesiones | Redis — compartido a nivel de proceso, namespaced con prefijo `bot:` |
+| LLM | DeepSeek (`deepseek-v4-flash`), detrás de una interfaz swappable |
+| Deploy | Docker Compose, stack independiente del sistema de tickets |
 
 ---
 
@@ -35,134 +32,66 @@ WhatsApp (cliente)
 Trabajador reenvía mensaje
       │
       ▼
-Twilio ──► POST /api/v1/whatsapp
-               │
-               ├─ Validación firma HMAC-SHA1
-               ├─ Whitelist (tabla workers)
-               ├─ Guardado raw_message
-               │
-               ▼
-         Pipeline NLP
-         (Ollama / Gemini Flash)
-               │
-               ▼
-         Ticket en PostgreSQL
-               │
-               ├─► Confirmación TwiML al trabajador
-               │
-               ├─► Interfaz de gestión (trabajadores)
-               │     Marcar estado · Editar entidades · Ver mensaje original
-               │
-               └─► Dashboard ejecutivo (directivos)
-                     Métricas · Volumen · Proyecciones
+Meta Cloud API ──► POST /webhook
+                       │
+                       ├─ Firma X-Hub-Signature-256
+                       ├─ Whitelist (tabla workers)
+                       ├─ Guardado raw_message (idempotente por wamid)
+                       │
+                       ▼
+                Buffer en Redis (debounce 30-60s)
+                       │
+                       ▼
+                Extracción de título (DeepSeek, con fallback determinista)
+                       │
+                       ├─► ¿Cliente? → búsqueda en sistema de tickets → desambiguación
+                       ├─► ¿Prioridad? → botones alta/media/baja
+                       │
+                       ▼
+                POST /tickets (sistema de tickets)
+                       │
+                       └─► Confirmación al trabajador por WhatsApp
 ```
 
----
-
-## Interfaces de usuario
-
-El sistema tiene dos interfaces con propósitos y audiencias distintas:
-
-**Interfaz de gestión de tickets** — para trabajadores del despacho. Permite revisar los tickets generados, ver el mensaje original del cliente, corregir campos que el LLM extrajo incorrectamente, y actualizar el estado del ticket (`abierto → en_proceso → completado`). Construida con FastAPI + HTMX sobre el mismo servidor del backend, sin servicio adicional.
-
-**Dashboard ejecutivo** — para directivos. Vista agregada de métricas: volumen por departamento, tiempo de resolución, tipos de solicitud más frecuentes, carga de trabajo proyectada. Read-only, construido con Plotly Dash.
+No hay interfaz de gestión ni dashboard en este repo — viven en el sistema de tickets.
 
 ---
 
 ## Modelo de datos
 
-Cinco tablas core. Diseñadas para soportar el MVP con espacio para crecer sin migraciones destructivas.
+Dos tablas únicamente. `Client`, `Department` y `Ticket` se eliminaron del modelo local (esos datos viven en el sistema de tickets).
 
 ```
-workers ──────────┐
-                  ├──► raw_messages ──► tickets ◄── clients
-departments ──────┘                        │
-                                           └──► departments
+workers ──► raw_messages
 ```
 
-**Decisiones de diseño documentadas:**
-- `raw_messages` persiste el payload completo de Twilio antes de cualquier procesamiento (auditoría y reintento en caso de fallo NLP)
-- `tickets.ticket_number` es un `BIGSERIAL` legible además del UUID primario — los trabajadores citan números, no UUIDs
-- `tickets.extracted_entities` en JSONB absorbe entidades nuevas sin alterar el schema
-- `departments` como tabla dinámica en lugar de ENUM — los directivos agregan departamentos desde el dashboard sin tocar código
-- `llm_provider` + `llm_confidence` por ticket para observabilidad desde el día uno
-
----
-
-## Fases de desarrollo
-
-### ✅ Fase 0 — Diseño y modelo de datos
-- [x] Definición del stack técnico
-- [x] Modelo de datos completo (5 tablas, constraints, índices)
-- [x] Schema Pydantic de extracción de entidades
-- [x] Estructura del repositorio
-
-### ✅ Fase 1 — Fundación
-- [x] Modelos SQLAlchemy (ORM)
-- [x] Primera migración Alembic
-- [x] Webhook `/api/v1/whatsapp` con validación de firma Twilio
-- [x] Validación de whitelist
-- [x] Guardado de `raw_messages`
-- [x] Docker Compose (`api` + `db`)
-- [x] Smoke test con ngrok
-
-### 🔄 Fase 2 — Pipeline NLP (en progreso)
-- [ ] Extractor de entidades con Ollama (desarrollo)
-- [ ] Extractor con Gemini Flash (producción)
-- [ ] Validación con Pydantic + manejo de JSON malformado
-- [ ] Creación de tickets en PostgreSQL
-- [ ] Deduplicación de clientes por RFC / teléfono
-
-### ⬜ Fase 3 — Respuestas e interfaz de gestión
-- [ ] Confirmación TwiML al trabajador (número de ticket, tipo, entidades extraídas)
-- [ ] Manejo de errores con mensaje amigable al trabajador
-- [ ] Interfaz de gestión: lista de tickets con filtros por estado y departamento
-- [ ] Interfaz de gestión: vista de ticket individual con mensaje original del cliente
-- [ ] Interfaz de gestión: edición inline de campos extraídos por el LLM
-- [ ] Interfaz de gestión: cambio de estado con historial de transiciones
-
-### ⬜ Fase 4 — Dashboard ejecutivo
-- [ ] Volumen de tickets por departamento
-- [ ] Tiempo promedio de resolución
-- [ ] Tipos de solicitud más frecuentes
-- [ ] Clientes con mayor actividad
-- [ ] Proyección de carga (regresión lineal)
-
-### ⬜ Fase 5 — Containerización y docs
-- [ ] Docker Compose completo (api + db + dashboard)
-- [ ] Variables de entorno documentadas
-- [ ] README de despliegue en servidor del despacho
-- [ ] Notebooks de análisis histórico
+- `workers`: whitelist de trabajadores. `external_user_id` / `external_department_id` son referencias externas (UUID de las tablas `users`/`departments` del sistema de tickets, sin FK real) — stopgap manual mientras no exista el sync automático (ver CLAUDE.md, Pendientes).
+- `raw_messages`: payload crudo del webhook, idempotente por `wamid`. `external_ticket_id` referencia (sin FK) el ticket creado del otro lado.
 
 ---
 
 ## Estructura del repositorio
 
 ```
-whatsapp-accounting-assistant/
-├── api/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py
-│   ├── config.py                  # Settings centralizados con Pydantic
-│   ├── database.py                # Engine async + sesión
-│   ├── routes/
-│   │   ├── webhook.py             # POST /api/v1/whatsapp
-│   │   └── tickets.py             # GET/PATCH /api/v1/tickets — próximamente
-│   ├── models/
-│   │   ├── orm.py                 # SQLAlchemy models
-│   │   └── schemas.py             # Pydantic request/response — próximamente
-│   ├── services/
-│   │   ├── whatsapp/              # Cliente Twilio + TwiML
-│   │   └── nlp/                   # Pipeline Ollama / Gemini — próximamente
-│   └── templates/                 # Jinja2 + HTMX — próximamente
-├── dashboard/                     # Plotly Dash (directivos) — próximamente
-├── notebooks/                     # Análisis históricos Jupyter — próximamente
-├── db/
-│   └── migrations/                # Alembic
-├── docker-compose.yml
-├── .env.example
-└── README.md
+api/
+├── routes/webhook.py          # dispatcher Cloud API — GET (verify) + POST /webhook
+├── models/                    # orm.py (Worker, RawMessage), schemas.py
+├── services/
+│   ├── meta/                   # cliente Graph API: texto, listas, botones
+│   ├── llm/                    # extracción — interfaz única, proveedor intercambiable
+│   ├── buffer/                 # debounce genérico sobre Redis
+│   ├── conversation/           # orquesta cliente/prioridad/creación de ticket
+│   ├── ticket_system/          # cliente HTTP hacia la API del sistema de tickets
+│   └── alerts/                 # notificador de eventos de alerta de Meta
+├── core/security.py            # firma X-Hub-Signature-256 + token interno saliente
+└── tests/                      # pytest — ver sección Pruebas
+db/migrations/                  # Alembic
+docker-compose.yml              # solo `api`, se une a la red externa `cgho_net`
+docker-compose.test.yml         # postgres/redis desechables, solo para pytest
+docs/
+├── whatsapp-webhook-reference.md
+└── bot-diseno-flujo-cliente.md
+CLAUDE.md
 ```
 
 ---
@@ -172,72 +101,88 @@ whatsapp-accounting-assistant/
 ### Prerrequisitos
 - Docker y Docker Compose
 - Python 3.12+
-- [Ollama](https://ollama.com) con `llama3.1:8b` o `qwen2.5:7b`
-- Cuenta Twilio con WhatsApp Sandbox configurado
-- [ngrok](https://ngrok.com) para exponer el webhook localmente
+- Cuenta de Meta Business Manager con número de WhatsApp Cloud API configurado
+- Acceso a la red Docker `cgho_net` (la crea el stack de CGHO Sistema de Tickets — ver Pendientes en `CLAUDE.md`, ese repo aún no la declara `external: true`)
 
-### 1. Clonar e instalar
-
-```bash
-git clone https://github.com/Isay-cz/whatsapp-accounting-assistant
-cd whatsapp-accounting-assistant
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Variables de entorno
+### 1. Variables de entorno
 
 ```bash
 cp .env.example .env
-# Editar .env con tus credenciales de Twilio
+# Editar .env con las credenciales reales (Meta, DeepSeek, INTERNAL_API_TOKEN)
 ```
 
-### 3. Levantar servicios
+### 2. Levantar el servicio
 
 ```bash
 docker compose up
 ```
 
-### 4. Correr migraciones
+### 3. Correr migraciones
 
 ```bash
+docker compose exec api alembic upgrade head
+```
+
+### 4. Agregar un worker de prueba
+
+```bash
+docker compose exec api python -c "
+import asyncio
+from database import AsyncSessionLocal
+from models.orm import Worker
+
+async def main():
+    async with AsyncSessionLocal() as db:
+        db.add(Worker(phone_number='+521XXXXXXXXXX', name='Tu nombre', is_active=True))
+        await db.commit()
+
+asyncio.run(main())
+"
+```
+
+### 5. Registrar el webhook en Meta
+
+En Meta for Developers → tu app → WhatsApp → Configuration, apunta el webhook a `https://tu-dominio/webhook` con el `META_VERIFY_TOKEN` configurado en `.env`.
+
+---
+
+## Pruebas
+
+Requieren un Postgres y un Redis desechables (no el stack compartido de producción):
+
+```bash
+docker compose -f docker-compose.test.yml up -d
+cd api
+pip install -r requirements-dev.txt
+export DATABASE_URL=postgresql://bot_test:bot_test@localhost:55432/bot_test
+export REDIS_URL=redis://localhost:56379/1
 alembic upgrade head
+pytest
 ```
 
-### 5. Exponer webhook
-
-```bash
-ngrok http 8000
-# Copiar la URL https://xxxx.ngrok-free.app/api/v1/whatsapp
-# Pegarla en Twilio Console → Sandbox → "When a message comes in"
-```
-
-### 6. Agregar un worker de prueba
-
-```bash
-docker compose exec db psql -U devuser -d accounting_bot -c \
-  "INSERT INTO workers (id, phone_number, name, role, is_active) \
-  VALUES (gen_random_uuid(), '+521XXXXXXXXXX', 'Tu nombre', 'dev', true);"
-```
+Los clientes de `services/meta`, `services/ticket_system` y `services/llm` se prueban con mocks — nunca contra Graph API, el sistema de tickets real o DeepSeek. `services/buffer` se prueba contra Redis real (necesita TTL real, no tiene sentido simularlo). La conexión real contra el stack de `cgho-ops` queda fuera de esta rebanada — ver `CLAUDE.md`, Pendientes.
 
 ---
 
 ## Variables de entorno
 
-Las siguientes variables van en el archivo `.env` en la raíz del proyecto. Las credenciales de la base de datos (`POSTGRES_USER`, `POSTGRES_PASSWORD`) se configuran directamente en `docker-compose.yml` y no son necesarias en `.env`.
- 
-| Variable | Descripción | Ejemplo |
-|---|---|---|
-| `DATABASE_URL` | Conexión a PostgreSQL | `postgresql://devuser:devpassword@localhost:5432/accounting_bot` |
-| `TWILIO_ACCOUNT_SID` | SID de la cuenta Twilio | `ACxxxxxxxx` |
-| `TWILIO_AUTH_TOKEN` | Token de autenticación Twilio | `xxxxxxxx` |
-| `TWILIO_WHATSAPP_NUMBER` | Número del sandbox | `whatsapp:+14155238886` |
-| `LLM_PROVIDER` | Proveedor LLM activo | `ollama` \| `gemini` |
-| `OLLAMA_BASE_URL` | URL de Ollama local | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Modelo a usar en desarrollo | `llama3.1:8b` |
-| `GEMINI_API_KEY` | API key de Gemini (producción) | `AIzaxxxx` |
-| `DEBUG` | Modo debug de FastAPI + SQLAlchemy | `true` \| `false` |
+Ver `.env.example` para la lista completa. Se inyectan por Docker Compose (`environment:`) — nunca `env_file` dentro de `Settings` de pydantic ni `load_dotenv()` en otro lado.
+
+| Variable | Descripción |
+|---|---|
+| `DATABASE_URL` | Conexión a Postgres (base y rol propios del bot) |
+| `REDIS_URL` | Conexión a Redis compartido (namespaced `bot:`) |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Extracción de título |
+| `META_APP_SECRET` / `META_VERIFY_TOKEN` / `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID` | WhatsApp Cloud API |
+| `INTERNAL_API_TOKEN` | Token compartido con el sistema de tickets — solo saliente |
+| `TICKET_SYSTEM_BASE_URL` | Base URL de la API del sistema de tickets |
 
 ---
 
-*Documentación actualizada iterativamente durante el sprint de desarrollo.*
+## Fases
+
+Ver `CLAUDE.md` para el detalle de fases (0–4), decisiones de arquitectura y pendientes que bloquean piezas específicas.
+
+---
+
+*Ver `CLAUDE.md` para contexto completo, decisiones ya tomadas y qué no reabrir sin discusión explícita.*

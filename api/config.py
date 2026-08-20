@@ -1,26 +1,47 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+
 class Settings(BaseSettings):
+    """
+    Fuente única de configuración. Todas las variables llegan por entorno
+    (Docker Compose `environment:` en runtime, o el shell en local/tests) —
+    nunca `env_file` aquí ni `load_dotenv()` en otro lado (ver CLAUDE.md,
+    decisión #12: la versión Twilio tenía tres mecanismos de env vars que no
+    se comunicaban entre sí y perdían variables silenciosamente).
+    """
+
     # Base de datos
     database_url: str
 
-    # Twilio
-    twilio_account_sid: str
-    twilio_auth_token: str
-    twilio_whatsapp_number: str  # ej: whatsapp:+521XXXXXXXXXX
+    # Redis — buffer de mensajes y timeouts de confirmación (namespaced con
+    # el prefijo de llave `bot:`, ver services/buffer)
+    redis_url: str
+    buffer_ttl_seconds: int = 45
+    client_response_timeout_seconds: int = 60
+    priority_response_timeout_seconds: int = 60
 
-    # LLM
-    llm_provider: str = "ollama"          # "ollama" | "gemini"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
-    gemini_api_key: str = ""
+    # LLM — DeepSeek
+    llm_provider: str = "deepseek"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_timeout_seconds: float = 15.0
+
+    # WhatsApp Cloud API (Meta)
+    meta_app_secret: str = ""
+    meta_verify_token: str = ""
+    meta_access_token: str = ""
+    meta_phone_number_id: str = ""
+    meta_api_version: str = "v21.0"
+
+    # Sistema de tickets (CGHO Sistema de Tickets)
+    internal_api_token: str = ""
+    ticket_system_base_url: str = ""
 
     # App
     debug: bool = False
 
-    class Config:
-        env_file = ".env"
 
 @lru_cache
 def get_settings() -> Settings:
