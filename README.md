@@ -59,14 +59,16 @@ No hay interfaz de gestión ni dashboard en este repo — viven en el sistema de
 
 ## Modelo de datos
 
-Dos tablas únicamente. `Client`, `Department` y `Ticket` se eliminaron del modelo local (esos datos viven en el sistema de tickets).
+Tres tablas únicamente. `Client`, `Department` y `Ticket` se eliminaron del modelo local (esos datos viven en el sistema de tickets).
 
 ```
-workers ──► raw_messages
+workers ──► raw_messages ──► ticket_creations
+   └──────────────────────────────┘
 ```
 
 - `workers`: whitelist de trabajadores. Se mantiene sola: un task en segundo plano hace poll de `GET /internal/workers` del sistema de tickets cada `WORKER_SYNC_INTERVAL_SECONDS` y reconcilia la tabla completa (ver CLAUDE.md, decisión #15). `external_user_id` es una referencia externa (el UUID de `users` del sistema de tickets, sin FK real) que se manda como `created_by` al crear un ticket. `phone_number` se guarda normalizado a solo dígitos (decisión #18).
-- `raw_messages`: payload crudo del webhook, idempotente por `wamid`. `external_ticket_id` referencia (sin FK) el ticket creado del otro lado.
+- `raw_messages`: payload crudo del webhook, idempotente por `wamid`. `ticket_creation_id` apunta al intento de creación que generó ese bloque de mensajes (N mensajes → 1 intento).
+- `ticket_creations`: (también con FK a `workers`) bitácora de lo que el bot mandó crear — título, entidades, prioridad, cliente — más lo que devolvió el sistema de tickets (`ticket_number` y UUID). Registra también los intentos fallidos, con el error. Es auditoría del momento en que se creó, **no** un espejo del ticket: si allá lo renombran, esta tabla no se entera (ver CLAUDE.md, decisión #20).
 
 ---
 
@@ -75,12 +77,14 @@ workers ──► raw_messages
 ```
 api/
 ├── routes/webhook.py          # dispatcher Cloud API — GET (verify) + POST /webhook
-├── models/                    # orm.py (Worker, RawMessage), schemas.py
+├── models/                    # orm.py (Worker, RawMessage, TicketCreation), schemas.py
 ├── services/
 │   ├── meta/                   # cliente Graph API: texto, listas, botones
 │   ├── llm/                    # extracción — interfaz única, proveedor intercambiable
+│   │                           # entities.py: regla verbatim de entidades
 │   ├── buffer/                 # debounce genérico sobre Redis
 │   ├── conversation/           # orquesta cliente/prioridad/creación de ticket
+│   │                           # description.py: entidades + mensajes crudos
 │   ├── ticket_system/          # cliente HTTP hacia la API del sistema de tickets
 │   └── alerts/                 # notificador de eventos de alerta de Meta
 ├── core/security.py            # firma X-Hub-Signature-256 + token interno saliente
@@ -161,7 +165,20 @@ alembic upgrade head
 pytest
 ```
 
-Los clientes de `services/meta`, `services/ticket_system` y `services/llm` se prueban con mocks — nunca contra Graph API, el sistema de tickets real o DeepSeek. `services/buffer` se prueba contra Redis real (necesita TTL real, no tiene sentido simularlo). La conexión real contra el stack de `cgho-ops` queda fuera de esta rebanada — ver `CLAUDE.md`, Pendientes.
+`tests/test_ticket_lifecycle.py` recorre el ciclo de vida completo de un ticket sin estar conectado a Meta: entra por el webhook firmado y sale en `POST /internal/tickets`, con el buffer, las sesiones y el flujo conversacional reales. Solo se interceptan las respuestas de red (Meta, DeepSeek, sistema de tickets), así que también verifica la forma de los requests salientes. Cubre mensaje único, varios mensajes agrupados por el refresh del debounce, reintento de Meta con el mismo `wamid`, fallo del LLM, "Sin cliente" y los dos timeouts.
+
+En la corrida normal, los clientes de `services/meta`, `services/ticket_system` y `services/llm` se prueban con mocks — nunca contra Graph API, el sistema de tickets real o DeepSeek; salir de verdad es exclusivo de las pruebas `live` de abajo. `services/buffer` se prueba contra Redis real (necesita TTL real, no tiene sentido simularlo).
+
+### Pruebas en vivo (servicios reales)
+
+`tests/test_ticket_lifecycle.py` no sale a la red: todas las respuestas están simuladas, así que no detecta si DeepSeek cambió de formato o si el sistema de tickets cambió su contrato. Para eso está `tests/test_live_integration.py`, marcado `live` y **excluido de la corrida normal** (`addopts = -m "not live"` en `pytest.ini`). Se pide a propósito, desde un contenedor efímero del stack normal — así resuelve `postgres`, `redis` y `tickets-api` en `cgho_net`, toma el `.env` actual y **no reinicia el bot que ya está corriendo**:
+
+```bash
+docker compose run --rm --no-deps api \
+    sh -lc "pip install -q -r requirements-dev.txt && pytest -m live -s"
+```
+
+Qué es real ahí: DeepSeek (verifica que el prompt siga devolviendo `{"title": "...", "entities": {...}}` — si degradara a fallback, un mock nunca lo notaría), el sistema de tickets (**crea un ticket de verdad**) y la base del bot (escribe en `raw_messages` y `ticket_creations` con commit; esas filas se quedan, con `wamid` `wamid.live-test.*`). Meta siempre queda mockeado: no hay número de Cloud API verificado todavía, y además el `phone_number_id` se sobrescribe con un valor falso para que sea imposible mandar un WhatsApp desde una prueba. El ticket se crea con prioridad baja y sin cliente a propósito — un ticket de prueba no debe encabezar la cola de nadie ni colgarse del historial de un cliente real.
 
 ---
 

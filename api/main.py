@@ -9,7 +9,11 @@ from config import get_settings
 from routes.webhook import router as webhook_router
 from services.alerts import get_alert_notifier
 from services.buffer import get_redis, message_buffer, session
-from services.conversation import ConversationFlow, lookup_active_worker_by_phone
+from services.conversation import (
+    ConversationFlow,
+    lookup_active_worker_by_phone,
+    record_ticket_creation,
+)
 from services.llm import get_extractor
 from services.meta import get_meta_client
 from services.ticket_system import get_ticket_system_client, worker_sync_loop
@@ -30,6 +34,7 @@ async def lifespan(app: FastAPI):
         meta=get_meta_client(settings),
         ticket_system=ticket_system,
         worker_lookup=lookup_active_worker_by_phone,
+        record_creation=record_ticket_creation,
     )
     app.state.redis = redis
     app.state.conversation_flow = conversation_flow

@@ -1,15 +1,18 @@
 import asyncio
+import json
 import logging
 from typing import Awaitable, Callable
 
 from redis.asyncio import Redis
+
+from models.schemas import BufferedMessage
 
 from ._tasks import track
 from .keys import buffer_key, buffer_lock_key, buffer_marker_key, phone_from_buffer_key, KEY_PREFIX
 
 logger = logging.getLogger(__name__)
 
-OnBufferClose = Callable[[str, list[str]], Awaitable[None]]
+OnBufferClose = Callable[[str, list[BufferedMessage]], Awaitable[None]]
 
 # Margen de seguridad sobre el TTL real de los datos: la señal de "cerró el
 # debounce" la da el marcador (`buffer_marker_key`), nunca la expiración
@@ -19,13 +22,30 @@ OnBufferClose = Callable[[str, list[str]], Awaitable[None]]
 _STORAGE_SAFETY_MARGIN_SECONDS = 30
 
 
-async def push_message(redis: Redis, phone: str, message: str, ttl_seconds: int) -> None:
+async def push_message(
+    redis: Redis, phone: str, message: str, ttl_seconds: int, wamid: str | None = None
+) -> None:
     """Agrega un mensaje al bloque en curso y refresca la ventana de
-    debounce — cada mensaje nuevo la reinicia."""
+    debounce — cada mensaje nuevo la reinicia.
+
+    Se guarda `{wamid, body}` y no solo el texto: al crear el ticket hay que
+    saber qué filas de `raw_messages` compusieron el bloque para vincularlas
+    (CLAUDE.md, decisión #20)."""
     key = buffer_key(phone)
-    await redis.rpush(key, message)
+    await redis.rpush(key, BufferedMessage(wamid=wamid, body=message).model_dump_json())
     await redis.expire(key, ttl_seconds + _STORAGE_SAFETY_MARGIN_SECONDS)
     await redis.set(buffer_marker_key(phone), "1", ex=ttl_seconds)
+
+
+def _parse_entry(raw: str) -> BufferedMessage:
+    """Parseo defensivo por la transición: los bloques que ya estaban en
+    Redis cuando se desplegó el cambio de formato traen el cuerpo del
+    mensaje en texto plano, sin `wamid`. Duran lo que el TTL del buffer
+    (menos de un minuto), pero perderlos sería perder un ticket."""
+    try:
+        return BufferedMessage(**json.loads(raw))
+    except Exception:
+        return BufferedMessage(wamid=None, body=raw)
 
 
 async def spawn_watcher_if_needed(
@@ -56,10 +76,10 @@ async def _watch(redis: Redis, phone: str, ttl_seconds: int, on_close: OnBufferC
                 break
             wait_seconds = remaining_ms / 1000
 
-        messages = await redis.lrange(key, 0, -1)
+        entries = await redis.lrange(key, 0, -1)
         await redis.delete(key, marker)
-        if messages:
-            await on_close(phone, messages)
+        if entries:
+            await on_close(phone, [_parse_entry(entry) for entry in entries])
     except Exception:
         logger.exception("Watcher de buffer falló para %s", phone)
     finally:

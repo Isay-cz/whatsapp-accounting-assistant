@@ -168,7 +168,11 @@ async def _process_message(phone: str, message: dict, conversation_flow: Convers
     if msg_type == "text":
         text = message.get("text", {}).get("body", "").strip()
         if text:
-            await conversation_flow.handle_incoming_message(phone, text)
+            # El wamid viaja hasta el buffer para poder vincular después esta
+            # fila de `raw_messages` con el ticket que genere (decisión #20).
+            await conversation_flow.handle_incoming_message(
+                phone, text, wamid=message.get("id")
+            )
     elif msg_type == "interactive":
         reply = _parse_interactive_reply(message)
         if reply:

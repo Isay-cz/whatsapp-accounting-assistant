@@ -86,7 +86,7 @@ async def test_messages_field_creates_raw_message_and_schedules_processing(
     assert raw_message.body == "this is a text message"
 
     conversation_flow.handle_incoming_message.assert_awaited_once_with(
-        "16315551181", "this is a text message"
+        "16315551181", "this is a text message", wamid="ABGGFlA5Fpa"
     )
 
 

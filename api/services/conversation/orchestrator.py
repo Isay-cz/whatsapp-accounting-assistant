@@ -5,11 +5,19 @@ from redis.asyncio import Redis
 
 from config import Settings
 from models.orm import Worker
-from models.schemas import Priority
+from models.schemas import (
+    BufferedMessage,
+    CreationStatus,
+    ExtractedEntities,
+    Priority,
+    TicketCreationLog,
+)
 from services.buffer import message_buffer, session
 from services.llm.base import LLMExtractor
 from services.meta import MetaClient
 from services.ticket_system import TicketSystemClient
+
+from .description import build_description
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +40,30 @@ NO_CLIENT_OPTION_TITLE = "Sin cliente"
 # interactiva de WhatsApp.
 MAX_CLIENT_MATCHES = 9
 
+ASK_PRIORITY_TEXT = "¿Qué prioridad tiene?"
+CREATION_FAILED_TEXT = (
+    "No se pudo crear el ticket ahora mismo. Tus mensajes no se perdieron: "
+    "vuelve a elegir la prioridad para reintentar."
+)
+NO_EXTERNAL_USER_TEXT = (
+    "No se pudo crear el ticket: tu usuario no está vinculado al sistema de "
+    "tickets todavía. Avisa a un administrador."
+)
+
 WorkerLookup = Callable[[str], Awaitable[Worker | None]]
+CreationRecorder = Callable[[TicketCreationLog], Awaitable[None]]
 
 
 class ConversationFlow:
     """Orquesta el flujo post-buffer (paso 3 en adelante del flujo end-to-end
-    de CLAUDE.md): extracción de título, confirmación de cliente, prioridad
-    y creación del ticket. Usa `services/buffer` para el estado de sesión
-    (`bot:session:{phone}`) con el mismo mecanismo de TTL que el buffer de
-    mensajes."""
+    de CLAUDE.md): extracción de título y entidades, confirmación de cliente,
+    prioridad y creación del ticket. Usa `services/buffer` para el estado de
+    sesión (`bot:session:{phone}`) con el mismo mecanismo de TTL que el
+    buffer de mensajes.
+
+    No conoce SQLAlchemy: lo que necesita de la base entra por
+    `worker_lookup` y `record_creation`, igual que el resto de sus
+    dependencias."""
 
     def __init__(
         self,
@@ -50,6 +73,7 @@ class ConversationFlow:
         meta: MetaClient,
         ticket_system: TicketSystemClient,
         worker_lookup: WorkerLookup,
+        record_creation: CreationRecorder,
     ):
         self._redis = redis
         self._settings = settings
@@ -57,6 +81,7 @@ class ConversationFlow:
         self._meta = meta
         self._ticket_system = ticket_system
         self._worker_lookup = worker_lookup
+        self._record_creation = record_creation
 
     @property
     def step_timeout_handlers(self) -> dict[str, session.OnTimeout]:
@@ -67,7 +92,7 @@ class ConversationFlow:
 
     # -- Entrada desde el webhook --------------------------------------
 
-    async def handle_incoming_message(self, phone: str, text: str) -> None:
+    async def handle_incoming_message(self, phone: str, text: str, wamid: str | None = None) -> None:
         """Punto de entrada único para un mensaje de texto ya validado
         contra la whitelist. Decide si es un mensaje nuevo a bufferizar o
         la respuesta a la pregunta de cliente en curso."""
@@ -77,7 +102,7 @@ class ConversationFlow:
             return
 
         await message_buffer.push_message(
-            self._redis, phone, text, self._settings.buffer_ttl_seconds
+            self._redis, phone, text, self._settings.buffer_ttl_seconds, wamid=wamid
         )
         await message_buffer.spawn_watcher_if_needed(
             self._redis, phone, self._settings.buffer_ttl_seconds, self.on_buffer_close
@@ -99,7 +124,7 @@ class ConversationFlow:
 
     # -- Cierre de buffer -------------------------------------------------
 
-    async def on_buffer_close(self, phone: str, messages: list[str]) -> None:
+    async def on_buffer_close(self, phone: str, messages: list[BufferedMessage]) -> None:
         worker = await self._worker_lookup(phone)
         if worker is None:
             logger.warning(
@@ -108,11 +133,17 @@ class ConversationFlow:
             )
             return
 
-        result = await self._llm.extract_title(messages)
+        bodies = [m.body for m in messages]
+        result = await self._llm.extract_title(bodies)
         state: dict[str, Any] = {
             "step": STEP_AWAITING_CLIENT,
             "title": result.title,
-            "messages": messages,
+            "entities": result.entities.model_dump(mode="json") if result.entities else None,
+            "messages": bodies,
+            # Los wamids viajan en la sesión para poder vincular después las
+            # filas de `raw_messages` con el ticket (decisión #20).
+            "wamids": [m.wamid for m in messages if m.wamid],
+            "worker_id": str(worker.id),
             "external_user_id": str(worker.external_user_id) if worker.external_user_id else None,
         }
         await session.start_session(
@@ -173,7 +204,7 @@ class ConversationFlow:
             STEP_AWAITING_PRIORITY,
             self._on_priority_timeout,
         )
-        await self._meta.send_buttons(phone, "¿Qué prioridad tiene?", PRIORITY_OPTIONS)
+        await self._meta.send_buttons(phone, ASK_PRIORITY_TEXT, PRIORITY_OPTIONS)
 
     async def _on_priority_timeout(self, phone: str, state: dict[str, Any]) -> None:
         await self._finish(phone, state, priority=DEFAULT_PRIORITY)
@@ -181,9 +212,9 @@ class ConversationFlow:
     # -- Creación del ticket -------------------------------------------------
 
     async def _finish(self, phone: str, state: dict[str, Any], priority: str) -> None:
-        await session.clear_session(self._redis, phone)
-
+        entities = self._entities_from(state)
         created_by = state.get("external_user_id")
+
         if not created_by:
             logger.error(
                 "No se puede crear el ticket para %s: el worker no tiene "
@@ -192,22 +223,99 @@ class ConversationFlow:
                 "tickets y que el sync esté corriendo.",
                 phone,
             )
-            await self._meta.send_text(
-                phone,
-                "No se pudo crear el ticket: tu usuario no está vinculado al sistema de "
-                "tickets todavía. Avisa a un administrador.",
+            # Aquí sí se cierra la sesión: reintentar no arreglaría nada
+            # mientras no cambie el roster del otro lado.
+            await session.clear_session(self._redis, phone)
+            await self._log(
+                state,
+                entities,
+                priority,
+                CreationStatus.failed,
+                error="worker sin external_user_id",
             )
+            await self._meta.send_text(phone, NO_EXTERNAL_USER_TEXT)
             return
 
-        description = "\n".join(state.get("messages", []))
-        # El departamento no se manda: lo deriva el sistema de tickets del
-        # departamento de `created_by` (CLAUDE.md, decisión #8).
-        ticket = await self._ticket_system.create_ticket(
-            title=state["title"],
-            description=description,
-            priority=priority,
-            created_by=created_by,
-            client_id=state.get("client_id"),
-        )
+        description = build_description(state.get("messages", []), entities)
+        try:
+            # El departamento no se manda: lo deriva el sistema de tickets del
+            # departamento de `created_by` (CLAUDE.md, decisión #8).
+            ticket = await self._ticket_system.create_ticket(
+                title=state["title"],
+                description=description,
+                priority=priority,
+                created_by=created_by,
+                client_id=state.get("client_id"),
+            )
+        except Exception as exc:
+            logger.exception("Falló POST /internal/tickets para %s", phone)
+            await self._log(state, entities, priority, CreationStatus.failed, error=str(exc))
+            # La sesión NO se borra: si se borrara, el bloque de mensajes se
+            # perdería y el trabajador se quedaría sin saber que su ticket no
+            # existe (CLAUDE.md, decisión #21). Se refresca su TTL y se
+            # vuelven a mandar los botones para que un toque reintente.
+            await session.start_session(
+                self._redis, phone, state, self._settings.priority_response_timeout_seconds
+            )
+            await self._meta.send_text(phone, CREATION_FAILED_TEXT)
+            await self._meta.send_buttons(phone, ASK_PRIORITY_TEXT, PRIORITY_OPTIONS)
+            return
 
+        await session.clear_session(self._redis, phone)
+        await self._log(
+            state,
+            entities,
+            priority,
+            CreationStatus.created,
+            external_ticket_id=ticket.id,
+            ticket_number=ticket.ticket_number,
+        )
         await self._meta.send_text(phone, f"Ticket #{ticket.ticket_number} creado")
+
+    @staticmethod
+    def _entities_from(state: dict[str, Any]) -> ExtractedEntities | None:
+        raw = state.get("entities")
+        if not raw:
+            return None
+        try:
+            return ExtractedEntities(**raw)
+        except Exception:
+            # Estado de sesión escrito por una versión anterior del bot, o
+            # corrupto: el ticket se crea igual, sin encabezado de entidades.
+            logger.warning("Entidades ilegibles en la sesión de un ticket; se ignoran")
+            return None
+
+    async def _log(
+        self,
+        state: dict[str, Any],
+        entities: ExtractedEntities | None,
+        priority: str,
+        status: CreationStatus,
+        external_ticket_id: str | None = None,
+        ticket_number: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        """La bitácora nunca puede tumbar el flujo: cuando el ticket ya se
+        creó, una falla al registrarlo no debe propagarse hacia arriba y
+        provocar un segundo intento."""
+        worker_id = state.get("worker_id")
+        if not worker_id:
+            logger.warning("Sesión sin worker_id; no se registra en ticket_creations")
+            return
+        try:
+            await self._record_creation(
+                TicketCreationLog(
+                    worker_id=worker_id,
+                    wamids=state.get("wamids", []),
+                    title=state.get("title", ""),
+                    entities=entities,
+                    priority=priority,
+                    client_id=state.get("client_id"),
+                    status=status,
+                    external_ticket_id=external_ticket_id,
+                    ticket_number=ticket_number,
+                    error=error,
+                )
+            )
+        except Exception:
+            logger.exception("No se pudo registrar el intento en ticket_creations")
