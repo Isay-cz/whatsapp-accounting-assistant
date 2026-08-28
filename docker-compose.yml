@@ -1,9 +1,16 @@
 services:
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     restart: unless-stopped
     volumes:
       - ./api:/app
+      # El mount de arriba reemplaza /app completo con el host ./api, así que
+      # alembic.ini y db/migrations (fuera de ./api, ver api/Dockerfile) se
+      # montan aparte para no perderlos.
+      - ./alembic.ini:/app/alembic.ini
+      - ./db:/app/db
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
