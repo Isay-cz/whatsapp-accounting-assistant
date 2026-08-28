@@ -90,6 +90,9 @@ api/
 ├── core/security.py            # firma X-Hub-Signature-256 + token interno saliente
 └── tests/                      # pytest — ver sección Pruebas
 db/migrations/                  # Alembic
+scripts/                        # prueba de humo del despliegue — ver scripts/README.md
+├── smoke_test.py               # webhook público + flujo completo contra la VM
+└── meta_sink.py                # recibe la salida del bot en vez de mandarla a Meta
 docker-compose.yml              # solo `api`, se une a la red externa `cgho_net`
 docker-compose.test.yml         # postgres/redis desechables, solo para pytest
 docs/
@@ -180,6 +183,17 @@ docker compose run --rm --no-deps api \
 
 Qué es real ahí: DeepSeek (verifica que el prompt siga devolviendo `{"title": "...", "entities": {...}}` — si degradara a fallback, un mock nunca lo notaría), el sistema de tickets (**crea un ticket de verdad**) y la base del bot (escribe en `raw_messages` y `ticket_creations` con commit; esas filas se quedan, con `wamid` `wamid.live-test.*`). Meta siempre queda mockeado: no hay número de Cloud API verificado todavía, y además el `phone_number_id` se sobrescribe con un valor falso para que sea imposible mandar un WhatsApp desde una prueba. El ticket se crea con prioridad baja y sin cliente a propósito — un ticket de prueba no debe encabezar la cola de nadie ni colgarse del historial de un cliente real.
 
+### Prueba de humo del despliegue
+
+Las dos corridas anteriores entran por ASGI, dentro del proceso: ninguna prueba el camino de red que usaría Meta. Para eso está `scripts/smoke_test.py`, que corre **en el servidor** y entra por HTTPS público → reverse proxy → contenedor desplegado:
+
+```bash
+scp scripts/*.py <usuario>@<vm>:~/whatsapp-accounting-assistant/scripts/
+ssh <usuario>@<vm> 'cd ~/whatsapp-accounting-assistant/scripts && python3 smoke_test.py all'
+```
+
+Es la única capa que detecta un `META_APP_SECRET` vacío, un alias de red equivocado o una ruta de proxy faltante — cosas invisibles para pytest que rompen el bot en producción. La salida hacia Meta la recibe `scripts/meta_sink.py` (contenedor local), así que el flujo completo corre de verdad sin número de Cloud API verificado. Detalle en `scripts/README.md`.
+
 ---
 
 ## Variables de entorno
@@ -192,6 +206,7 @@ Ver `.env.example` para la lista completa. Se inyectan por Docker Compose (`envi
 | `REDIS_URL` | Conexión a Redis compartido (namespaced `bot:`) |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Extracción de título |
 | `META_APP_SECRET` / `META_VERIFY_TOKEN` / `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID` | WhatsApp Cloud API |
+| `META_GRAPH_BASE_URL` | Solo pruebas de despliegue: apunta la salida a `scripts/meta_sink.py` en vez de a Meta. En producción se deja sin definir (default `https://graph.facebook.com`) |
 | `INTERNAL_API_TOKEN` | Token compartido con el sistema de tickets — solo saliente |
 | `TICKET_SYSTEM_BASE_URL` | Base URL de la API del sistema de tickets. Es `http://tickets-api:8000`, **no** `http://api:8000`: este stack también nombra `api` a su propio servicio y ese nombre resuelve al contenedor local |
 | `WORKER_SYNC_INTERVAL_SECONDS` | Cada cuánto se refresca la whitelist (default 300) |

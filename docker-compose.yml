@@ -21,6 +21,9 @@ services:
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
       META_API_VERSION: ${META_API_VERSION:-v21.0}
+      # Solo se sobrescribe en entornos de prueba, para mandar la salida a
+      # scripts/meta_sink.py en vez de a Meta (ver scripts/README.md).
+      META_GRAPH_BASE_URL: ${META_GRAPH_BASE_URL:-https://graph.facebook.com}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
@@ -30,7 +33,14 @@ services:
     # lo que ya escucha en 8000 en el servidor.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
-      - cgho_net
+      cgho_net:
+        # Espejo del alias `tickets-api` del otro stack, y por la misma razón:
+        # los dos composes nombran `api` a su servicio, así que en `cgho_net`
+        # el nombre `api` resuelve a los dos contenedores indistintamente.
+        # Cualquier cosa que necesite hablarle a ESTE servicio desde la red
+        # compartida (el reverse proxy, el sink de pruebas) usa `bot-api`.
+        aliases:
+          - bot-api
 
 # Postgres y Redis NO se definen aquí — corren en el stack de cgho-ops (CGHO
 # Sistema de Tickets) y se comparten a nivel de proceso, no de datos: este bot

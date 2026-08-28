@@ -11,14 +11,24 @@ class MetaClient:
     que estaba roto (importaba `settings` de un módulo que solo exporta
     `get_settings()`, con atributos en mayúsculas que no existen)."""
 
-    def __init__(self, access_token: str, phone_number_id: str, api_version: str = "v21.0"):
+    def __init__(
+        self,
+        access_token: str,
+        phone_number_id: str,
+        api_version: str = "v21.0",
+        base_url: str = GRAPH_BASE_URL,
+    ):
         self._access_token = access_token
         self._phone_number_id = phone_number_id
         self._api_version = api_version
+        # `base_url` existe solo para poder apuntar la salida a un receptor
+        # local en pruebas de despliegue (scripts/meta_sink.py), donde todavía
+        # no hay número de Cloud API verificado. El default es Meta.
+        self._base_url = base_url.rstrip("/")
 
     @property
     def _url(self) -> str:
-        return f"{GRAPH_BASE_URL}/{self._api_version}/{self._phone_number_id}/messages"
+        return f"{self._base_url}/{self._api_version}/{self._phone_number_id}/messages"
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -89,4 +99,5 @@ def get_meta_client(settings: Settings) -> MetaClient:
         access_token=settings.meta_access_token,
         phone_number_id=settings.meta_phone_number_id,
         api_version=settings.meta_api_version,
+        base_url=settings.meta_graph_base_url,
     )

@@ -35,6 +35,9 @@ services:
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
       META_API_VERSION: ${META_API_VERSION:-v21.0}
+      # Solo se sobrescribe en entornos de prueba, para mandar la salida a
+      # scripts/meta_sink.py en vez de a Meta (ver scripts/README.md).
+      META_GRAPH_BASE_URL: ${META_GRAPH_BASE_URL:-https://graph.facebook.com}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
@@ -44,7 +47,14 @@ services:
     # Still no "ports" -- consistent with CLAUDE.md decision #17. Real webhook
     # exposure via Cloudflare Tunnel is a separate step, not part of this test.
     networks:
-      - cgho_net
+      cgho_net:
+        # Mirrors the "tickets-api" alias on the other stack, for the same
+        # reason: both composes name their service "api", so on cgho_net the
+        # bare name "api" resolves to either container. Anything that needs to
+        # reach THIS service from the shared network (the reverse proxy, the
+        # test sink) addresses it as "bot-api".
+        aliases:
+          - bot-api
 
 # Postgres and Redis are NOT defined here on purpose -- they run in the
 # cgho-ops stack and are shared at the process level, per CLAUDE.md decision
