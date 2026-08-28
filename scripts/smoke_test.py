@@ -139,12 +139,17 @@ def section(title: str) -> None:
     print(f"{Colors.BOLD}{title}{Colors.END}")
 
 
-def sh(*args: str, check: bool = True, stdin: str | None = None) -> str:
+def sh(*args: str, check: bool = True, cwd: Path | None = None) -> str:
     """Ejecuta un comando y devuelve stdout. Sin shell: los argumentos van
     tal cual, así que un nombre de contenedor o una consulta SQL con
-    espacios no necesita comillas."""
+    espacios no necesita comillas.
+
+    `cwd` importa para `docker compose`: sin `-f`, busca el archivo de
+    compose y el `.env` en el directorio de trabajo, no en el que le pase
+    `--project-directory`."""
     proc = subprocess.run(
-        args, capture_output=True, text=True, input=stdin, timeout=180
+        args, capture_output=True, text=True, timeout=300,
+        cwd=str(cwd) if cwd else None,
     )
     if check and proc.returncode != 0:
         raise SmokeError(
@@ -487,7 +492,7 @@ def cmd_setup(dep: Deployment, args) -> int:
         print(f"  {Colors.WARN}·{Colors.END} {change}")
 
     print("  recreando el contenedor del bot para que tome el entorno nuevo…")
-    sh("docker", "compose", "--project-directory", str(dep.bot_dir), "up", "-d")
+    sh("docker", "compose", "up", "-d", cwd=dep.bot_dir)
     dep.bot = find_container("whatsapp", "api")
 
     if not wait_for(
@@ -507,7 +512,7 @@ def cmd_teardown(dep: Deployment, args) -> int:
         dep.bot_env_path.write_text(backup.read_text())
         backup.unlink()
         print("  .env restaurado desde el respaldo")
-        sh("docker", "compose", "--project-directory", str(dep.bot_dir), "up", "-d")
+        sh("docker", "compose", "up", "-d", cwd=dep.bot_dir)
         print("  bot recreado con la configuración original")
     else:
         print("  no había respaldo del .env — nada que restaurar")
@@ -556,6 +561,21 @@ def preflight(dep: Deployment, rep: Report) -> dict:
         bool(env_vars.get("META_VERIFY_TOKEN")),
     )
 
+    # La variable la inyecta Compose siempre, así que verla en el entorno no
+    # prueba que la imagen la lea: una imagen anterior al cambio la ignoraría
+    # y seguiría llamando a graph.facebook.com. Sin esta verificación, eso se
+    # manifestaría mucho después como un timeout confuso esperando al sink.
+    supports = sh(
+        "docker", "exec", dep.bot, "grep", "-c", "meta_graph_base_url", "config.py",
+        check=False,
+    )
+    rep.check(
+        "La imagen desplegada lee META_GRAPH_BASE_URL",
+        supports.isdigit() and int(supports) > 0,
+        "" if supports.isdigit() and int(supports) > 0 else
+        "imagen anterior al cambio: `docker compose pull && docker compose up -d`",
+    )
+
     # El proxy: que `{prefix}/health` responda prueba que Caddy rutea a ESTE
     # contenedor y no al del sistema de tickets (que también expone /health).
     # La distinción de verdad la hace el handshake, más abajo.
@@ -574,8 +594,8 @@ def preflight(dep: Deployment, rep: Report) -> dict:
             "          reverse_proxy bot-api:8000\n"
             "      }\n\n"
             "  y el alias `bot-api` en el docker-compose del bot. Después:\n"
-            "      docker compose --project-directory ~/cgho-ops up -d\n"
-            "      docker compose --project-directory ~/whatsapp-accounting-assistant up -d"
+            "      docker exec cgho-ops-caddy-1 caddy reload --config /etc/caddy/Caddyfile\n"
+            "      (cd ~/whatsapp-accounting-assistant && docker compose up -d)"
         )
 
     worker = dep.bot_db(
@@ -851,8 +871,13 @@ def phase_flow(dep: Deployment, rep: Report, worker: dict, args) -> None:
     )
 
     # -- 7. El otro lado --------------------------------------------------
+    # La descripción es multilínea (bloque de entidades + mensajes crudos) y
+    # `psql -tA` la escupe con sus saltos de línea, que romperían el parseo
+    # por filas de `Deployment.psql`. Se aplanan aquí, no allá: es la única
+    # columna de este script que los trae.
     ticket = dep.tickets_db(
-        "SELECT title, priority, status, created_by::text, client_id::text, description "
+        "SELECT title, priority, status, created_by::text, client_id::text, "
+        "replace(replace(description, chr(10), ' ⏎ '), chr(13), '') "
         f"FROM tickets WHERE ticket_number = {number}"
     )
     if not rep.check(
@@ -898,7 +923,10 @@ def _report_failed_creation(dep: Deployment, rep: Report, worker: dict) -> None:
     el ticket no salió, el error está ahí y es lo más útil que se puede
     imprimir."""
     failed = dep.bot_db(
-        "SELECT error, created_at FROM ticket_creations "
+        # Un traceback de httpx trae saltos de línea — mismo aplanado que la
+        # descripción del ticket, por la misma razón.
+        "SELECT replace(replace(error, chr(10), ' ⏎ '), chr(13), ''), created_at "
+        "FROM ticket_creations "
         f"WHERE worker_id = '{worker['worker_id']}' AND status = 'failed' "
         "ORDER BY created_at DESC LIMIT 1"
     )
