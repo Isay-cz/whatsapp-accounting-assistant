@@ -1,0 +1,55 @@
+# docker-compose.prod.yml -- Bot de WhatsApp (repo separado de cgho-ops)
+#
+# Deploy this in a SIBLING directory to cgho-ops on the VM, e.g. ~/cgho-bot/,
+# not nested inside it. It joins cgho-ops's network but owns nothing in it.
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Prerequisites before this will start cleanly:
+#   1. cgho-ops's stack must already be up (this network must exist).
+#   2. bot_db + bot_user must already exist in the shared Postgres -- see the
+#      one-time psql commands in the setup notes.
+#   3. .env here has real values for POSTGRES-side vars and INTERNAL_API_TOKEN
+#      (must match cgho-ops's .env exactly), and placeholder values for the
+#      META_* vars until the domain/Cloudflare Tunnel situation is resolved --
+#      this test isn't exercising real WhatsApp traffic yet.
+
+services:
+  api:
+    # TODO: fill in your real owner/repo once build-and-push.yml has run once.
+    image: ghcr.io/isay-cz/whatsapp-accounting-assistant:latest
+    restart: unless-stopped
+    labels:
+      # The WUD instance already running in the cgho-ops stack watches the
+      # whole Docker daemon, not just its own compose project -- these labels
+      # are enough for it to pick this container up too. No second WUD needed.
+      - wud.watch=true
+      - wud.trigger.include=docker.local
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
+      META_API_VERSION: ${META_API_VERSION:-v21.0}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+      TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
+      WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
+      DEBUG: ${DEBUG:-false}
+    # No bind mount (code is baked into the image) and no --reload command
+    # override -- the image's own CMD/entrypoint runs as built.
+    # Still no "ports" -- consistent with CLAUDE.md decision #17. Real webhook
+    # exposure via Cloudflare Tunnel is a separate step, not part of this test.
+    networks:
+      - cgho_net
+
+# Postgres and Redis are NOT defined here on purpose -- they run in the
+# cgho-ops stack and are shared at the process level, per CLAUDE.md decision
+# #3. This bot uses its own database and Postgres role, and namespaces its
+# Redis keys with a "bot:" prefix.
+networks:
+  cgho_net:
+    external: true
