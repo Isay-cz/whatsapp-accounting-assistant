@@ -45,7 +45,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 # -- Constantes del contrato que se está verificando -------------------------
 # Copiadas a propósito de services/conversation/orchestrator.py en vez de
@@ -233,6 +233,12 @@ def http(
         raise SmokeError(f"No se pudo alcanzar {url}: {exc}") from exc
 
 
+def _redis_db_index(redis_url: str) -> int:
+    """Índice de base de una URL `redis://host:puerto/N`. Sin sufijo, 0."""
+    path = urlsplit(redis_url).path.strip("/") if redis_url else ""
+    return int(path) if path.isdigit() else 0
+
+
 def wait_for(predicate, *, timeout: float, interval: float = 1.0):
     """Espera activa por un efecto asíncrono (cierre del buffer, respuesta de
     DeepSeek, creación del ticket). Devuelve lo que regrese el predicado, o
@@ -265,6 +271,11 @@ class Deployment:
         self.postgres = find_container("postgres")
         self.redis = find_container("redis")
         self.bot = find_container("whatsapp", "api")
+        # El bot no vive en la db 0: su REDIS_URL termina en `/1`, y `redis-cli`
+        # habla con la 0 si no se le dice otra cosa. Leer la base equivocada no
+        # falla, devuelve vacío — así que un "la sesión se limpió" pasaría sin
+        # haber mirado nunca la sesión. El índice se toma de la URL real.
+        self.redis_db = _redis_db_index(self.bot_env.get("REDIS_URL", ""))
 
         self.sink_name = args.sink_name
         self.sink_port = args.sink_port
@@ -306,7 +317,9 @@ class Deployment:
     # -- Redis ----------------------------------------------------------
 
     def redis_cli(self, *args: str) -> str:
-        return sh("docker", "exec", self.redis, "redis-cli", *args)
+        return sh(
+            "docker", "exec", self.redis, "redis-cli", "-n", str(self.redis_db), *args
+        )
 
     def clear_phone_state(self, phone: str) -> None:
         """Borra el estado de Redis del teléfono de prueba. Solo las llaves de
