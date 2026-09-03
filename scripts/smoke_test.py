@@ -562,7 +562,7 @@ def cmd_teardown(dep: Deployment, args) -> int:
 # Verificaciones
 # ===========================================================================
 
-def preflight(dep: Deployment, rep: Report) -> dict:
+def preflight(dep: Deployment, rep: Report, *, skip_flow: bool = False) -> dict:
     section("0 · PREFLIGHT — el despliegue está en pie")
 
     rep.check("Contenedor de Postgres corriendo", True, dep.postgres)
@@ -570,23 +570,37 @@ def preflight(dep: Deployment, rep: Report) -> dict:
     rep.check("Contenedor del bot corriendo", True, dep.bot)
     rep.check("Contenedor del sistema de tickets corriendo", True, find_container("ops", "api"))
 
-    ok_sink = dep.sink_running()
-    rep.check(
-        f"Sink de Meta (`{dep.sink_name}`) corriendo", ok_sink,
-        "" if ok_sink else "corre `smoke_test.py setup` primero",
-    )
-    if not ok_sink:
-        raise SmokeError("Sin el sink no se puede probar el flujo completo")
+    # Con `--skip-flow` no hay sink ni debe haberlo: ese modo existe para correr
+    # la conectividad contra un despliegue real, donde la salida tiene que ir a
+    # Meta. Exigir el sink ahí dejaría el flag inservible justo donde sirve.
+    if not skip_flow:
+        ok_sink = dep.sink_running()
+        rep.check(
+            f"Sink de Meta (`{dep.sink_name}`) corriendo", ok_sink,
+            "" if ok_sink else "corre `smoke_test.py setup` primero",
+        )
+        if not ok_sink:
+            raise SmokeError("Sin el sink no se puede probar el flujo completo")
 
     env = sh("docker", "exec", dep.bot, "printenv")
     env_vars = dict(
         line.partition("=")[::2] for line in env.splitlines() if "=" in line
     )
-    rep.check(
-        "El bot apunta su salida al sink",
-        env_vars.get(SINK_ENV_VAR, "").startswith(f"http://{dep.sink_name}"),
-        env_vars.get(SINK_ENV_VAR, "(sin definir)"),
-    )
+    if skip_flow:
+        # En un despliegue real, un sink olvidado es el fallo más silencioso que
+        # hay: el bot recibe, entiende y crea tickets, pero nadie recibe nunca
+        # una respuesta por WhatsApp y ningún error se levanta.
+        destino = env_vars.get(SINK_ENV_VAR, "") or "https://graph.facebook.com"
+        rep.check(
+            "El bot manda su salida a Meta, no a un sink",
+            destino.startswith("https://graph.facebook.com"), destino,
+        )
+    else:
+        rep.check(
+            "El bot apunta su salida al sink",
+            env_vars.get(SINK_ENV_VAR, "").startswith(f"http://{dep.sink_name}"),
+            env_vars.get(SINK_ENV_VAR, "(sin definir)"),
+        )
     rep.check(
         "META_APP_SECRET no está vacío en el contenedor",
         bool(env_vars.get("META_APP_SECRET")),
@@ -1011,7 +1025,7 @@ def cmd_run(dep: Deployment, args) -> int:
     print(f"{Colors.BOLD}Prueba de humo del despliegue{Colors.END}")
     print(f"  webhook: {dep.webhook_url}")
 
-    worker = preflight(dep, rep)
+    worker = preflight(dep, rep, skip_flow=args.skip_flow)
     phase_connectivity(dep, rep, worker)
     if not args.skip_flow:
         phase_flow(dep, rep, worker, args)
