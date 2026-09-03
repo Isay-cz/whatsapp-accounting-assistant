@@ -225,6 +225,12 @@ def http(
         return HttpResult(exc.code, exc.read().decode("utf-8", "replace"))
     except urllib.error.URLError as exc:
         raise SmokeError(f"No se pudo alcanzar {url}: {exc.reason}") from exc
+    except OSError as exc:
+        # Un puerto publicado por Docker acepta la conexión (docker-proxy ya
+        # escucha) antes de que el servidor de adentro esté listo, así que el
+        # primer request se cae con ConnectionResetError en vez de URLError.
+        # Se normaliza a SmokeError para que quien espera pueda reintentar.
+        raise SmokeError(f"No se pudo alcanzar {url}: {exc}") from exc
 
 
 def wait_for(predicate, *, timeout: float, interval: float = 1.0):
@@ -444,9 +450,7 @@ def cmd_setup(dep: Deployment, args) -> int:
     )
     print(f"  sink `{dep.sink_name}` levantado sobre {image}")
 
-    if not wait_for(
-        lambda: http("GET", f"{dep.sink_url}/_health").status == 200, timeout=30
-    ):
+    if not wait_for(lambda: _sink_healthy(dep), timeout=30):
         raise SmokeError(f"El sink no respondió en {dep.sink_url}/_health")
     print(f"  sink respondiendo en {dep.sink_url}")
 
@@ -932,6 +936,15 @@ def _report_failed_creation(dep: Deployment, rep: Report, worker: dict) -> None:
     )
     if failed:
         rep.note(f"Último fallo registrado en ticket_creations: {failed[0][0]}")
+
+
+def _sink_healthy(dep: Deployment) -> bool:
+    """El sink recién levantado rechaza los primeros requests; aquí un fallo de
+    conexión es "todavía no", no un error."""
+    try:
+        return http("GET", f"{dep.sink_url}/_health").status == 200
+    except SmokeError:
+        return False
 
 
 def _sink_text(dep: Deployment, body: str) -> dict | None:
