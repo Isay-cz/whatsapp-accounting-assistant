@@ -98,8 +98,21 @@ A propósito, como evidencia:
 
 `teardown` restaura el `.env` y quita el sink, pero no borra nada de eso.
 
+**`teardown` no revierte `META_APP_SECRET` ni `META_VERIFY_TOKEN`.** Si `setup`
+los generó fue porque estaban vacíos, y vacíos no son "el estado anterior" sino
+un despliegue abierto: el HMAC de un App Secret vacío lo calcula cualquiera y el
+handshake de verificación lo completa cualquiera. El resto del `.env` sí vuelve
+como estaba, incluidos los placeholders de `META_ACCESS_TOKEN` /
+`META_PHONE_NUMBER_ID` y el `META_GRAPH_BASE_URL` que apuntaba al sink.
+
 ## Supuestos
 
 Está pensado para una VM de prueba: asume que nadie más le está mandando
 mensajes al bot mientras corre, porque limpia las llaves de Redis del teléfono
 que usa antes de empezar.
+
+Lee la base de Redis que indica el `REDIS_URL` del bot, no la 0. Vale la pena
+saberlo si algún día se depura a mano: `redis-cli` sin `-n` habla con la 0, y
+ahí las llaves `bot:*` no existen — no da error, devuelve vacío, así que una
+verificación del tipo "la sesión se limpió" pasaría sin haber mirado nunca una
+sesión.

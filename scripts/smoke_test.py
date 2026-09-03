@@ -62,6 +62,9 @@ MARKER = "PRUEBA DE DESPLIEGUE DEL BOT — ignorar, se puede cerrar"
 
 SINK_ENV_VAR = "META_GRAPH_BASE_URL"
 ENV_BACKUP_SUFFIX = ".antes-del-smoke"
+# Lo que `teardown` no revierte: un secreto vacío no es "el estado anterior",
+# es un despliegue abierto. El resto del .env sí vuelve como estaba.
+KEEP_ON_TEARDOWN = ("META_APP_SECRET", "META_VERIFY_TOKEN")
 
 
 # ===========================================================================
@@ -526,9 +529,25 @@ def cmd_teardown(dep: Deployment, args) -> int:
 
     backup = dep.bot_env_path.with_suffix(dep.bot_env_path.suffix + ENV_BACKUP_SUFFIX)
     if backup.exists():
+        # Los secretos NO se revierten. Si estaban vacíos, `setup` los generó
+        # porque vacíos son un agujero: el HMAC de un App Secret vacío lo
+        # calcula cualquiera, y el handshake de verificación lo completa
+        # cualquiera. Restaurar el respaldo tal cual volvería a abrirlo.
+        generados = {
+            key: dep.bot_env.get(key, "")
+            for key in KEEP_ON_TEARDOWN
+            if dep.bot_env.get(key)
+        }
         dep.bot_env_path.write_text(backup.read_text())
         backup.unlink()
         print("  .env restaurado desde el respaldo")
+
+        previo = read_env(dep.bot_env_path)
+        for key, value in generados.items():
+            if not previo.get(key):
+                set_env_var(dep.bot_env_path, key, value)
+                print(f"  · {key} se conserva generado (vacío es inseguro)")
+
         sh("docker", "compose", "up", "-d", cwd=dep.bot_dir)
         print("  bot recreado con la configuración original")
     else:
