@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     meta_verify_token: str = ""
     meta_access_token: str = ""
     meta_phone_number_id: str = ""
-    meta_api_version: str = "v21.0"
+    meta_api_version: str = "v26.0"
     # Solo se cambia en entornos de prueba, para apuntar la salida a un
     # receptor local (`scripts/meta_sink.py`) en vez de a Meta. En producción
     # se deja el default: si esto apuntara a otro lado, el bot dejaría de
