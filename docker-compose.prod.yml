@@ -20,6 +20,16 @@ services:
     # TODO: fill in your real owner/repo once build-and-push.yml has run once.
     image: ghcr.io/isay-cz/whatsapp-accounting-assistant:latest
     restart: unless-stopped
+    # Mismo criterio que el stack de cgho-ops: el driver por defecto crece sin
+    # límite y aquí cada mensaje entrante deja varias líneas (más todavía con
+    # DEBUG=true, que además imprime el texto del mensaje). Llenar el disco del
+    # servidor con logs es otra forma de tirarlo.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
     labels:
       # The WUD instance already running in the cgho-ops stack watches the
       # whole Docker daemon, not just its own compose project -- these labels
