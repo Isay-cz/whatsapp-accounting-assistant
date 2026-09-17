@@ -53,7 +53,10 @@ class RawMessage(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     worker_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workers.id"), nullable=False)
-    wamid: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # 255 y no 64: el primer wamid real de Meta midió 66 caracteres y el INSERT
+    # moría con "value too long", dejando al webhook en 500 y a Meta
+    # reintentando. El largo depende del número y del mensaje — esto es holgura.
+    wamid: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     ticket_creation_id: Mapped[uuid.UUID | None] = mapped_column(

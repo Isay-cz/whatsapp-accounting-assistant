@@ -110,7 +110,7 @@ CLAUDE.md
 - Python 3.12+
 - Cuenta de Meta Business Manager con número de WhatsApp Cloud API configurado
 - El stack de CGHO Sistema de Tickets levantado: es el dueño de la red Docker `cgho_net` y la crea al arrancar, además de proveer Postgres y Redis. Si no está arriba, `docker compose up` de este repo falla con `network cgho_net not found`.
-- La base `bot_db` y el rol `bot_role` creados en ese Postgres (script `ops/bot-db-bootstrap.sql` del repo del sistema de tickets)
+- La base `bot_db` y el rol `bot_role` creados en ese Postgres con `ops/create-bot-db.sh` del repo del sistema de tickets. Hay que volver a correrlo si se recrea el volumen de Postgres de ese stack
 
 ### 1. Variables de entorno
 

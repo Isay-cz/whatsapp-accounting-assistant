@@ -61,6 +61,26 @@ async def _raw_message(worker: Worker, wamid: str, body: str) -> None:
         await db.commit()
 
 
+# El wamid tal como llegó de Meta en la primera prueba real (2026-09-17): 66
+# caracteres, dos más de los que aceptaba la columna. El INSERT moría con
+# "value too long", el webhook contestaba 500 y Meta reintentaba el mismo
+# mensaje sin parar. Ninguna prueba lo vio porque todos los wamid de aquí son
+# cortos e inventados, así que este queda tal cual, con su largo real.
+WAMID_REAL = "wamid.HBgNNTIxNTUxMTk3MTI2NhUCABIYFDNBNzRCNERBQ0FCMDUyMjE1NUU3AA=="
+
+
+async def test_acepta_un_wamid_del_largo_real(worker_comiteado):
+    from database import AsyncSessionLocal
+
+    await _raw_message(worker_comiteado, WAMID_REAL, "Hola, prueba 1")
+
+    async with AsyncSessionLocal() as db:
+        guardado = (
+            await db.execute(select(RawMessage).where(RawMessage.wamid == WAMID_REAL))
+        ).scalar_one()
+    assert guardado.body == "Hola, prueba 1"
+
+
 async def _creaciones(worker: Worker) -> list[TicketCreation]:
     from database import AsyncSessionLocal
 

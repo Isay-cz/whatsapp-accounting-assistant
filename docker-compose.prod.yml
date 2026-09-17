@@ -7,8 +7,9 @@
 #
 # Prerequisites before this will start cleanly:
 #   1. cgho-ops's stack must already be up (this network must exist).
-#   2. bot_db + bot_user must already exist in the shared Postgres -- see the
-#      one-time psql commands in the setup notes.
+#   2. bot_db + bot_role must already exist in the shared Postgres -- created
+#      by ops/create-bot-db.sh from the cgho-ops repo (re-run it whenever that
+#      stack's postgres_data volume is recreated).
 #   3. .env here has real values for POSTGRES-side vars and INTERNAL_API_TOKEN
 #      (must match cgho-ops's .env exactly), and placeholder values for the
 #      META_* vars until the domain/Cloudflare Tunnel situation is resolved --
