@@ -4,6 +4,10 @@ Bot que recibe mensajes de clientes reenviados por trabajadores del despacho ví
 
 **Repo hermano:** `CGHO Sistema de Tickets`. Consultar su `CLAUDE.md` y `DB-SCHEMA.md` para todo lo relacionado a `tickets`, `clients`, `departments`, `users`, `priority`. No se duplica esa información aquí — si algo de esto cambia del otro lado, este archivo se actualiza para reflejarlo, no se asume.
 
+## Plan vigente
+
+`docs/PLAN-AUDITORIA-2026-11.md`: las órdenes de trabajo que salieron de la auditoría de noviembre de 2026 — endurecimiento (`B1`–`B13`) y recepción de comprobantes por WhatsApp para Finanzas (`M1`–`M5`). **Una orden por sesión**; su §0 dice cómo trabajar cada una. El contrato de lo nuevo en `/internal` manda desde `cgho-ops/docs/PLAN-AUDITORIA-2026-11.md` §2.4.
+
 ## Qué hace y qué no hace
 
 **Hace:** recibe webhooks de WhatsApp Cloud API, valida whitelist de trabajadores, agrupa mensajes en bloques (buffer/debounce), extrae un título vía LLM, pregunta cliente y prioridad por WhatsApp, crea el ticket vía API del sistema de tickets, confirma al trabajador.
@@ -117,9 +121,9 @@ Aparte del flujo por mensaje: un task del `lifespan` hace poll cada `WORKER_SYNC
 | ~~Endpoints `/internal` del sistema de tickets~~ | — | **Resuelto.** `GET /internal/clients/search`, `POST /internal/tickets` y `GET /internal/workers` ya existen y están probados de punta a punta |
 | ~~Red Docker compartida `cgho_net`~~ | — | **Resuelto.** El diagnóstico original era incorrecto: no faltaba `external: true` del otro lado, faltaba `name: cgho_net` en el compose de cgho-ops, que es el dueño de la red y la crea. Aquí sigue siendo `external: true`. Consecuencia: cgho-ops se levanta primero |
 | Formato real de los números de WhatsApp de los trabajadores | Producción | Confirmar la regla de match por últimos 10 dígitos (decisión #18) contra números reales cuando el número de Cloud API esté verificado |
-| Verificación de Meta Business Manager (requiere sitio web activo) | Dominio `cghocontadores.mx` | Alta del número de WhatsApp Cloud API |
+| Verificación de Meta Business Manager (requiere sitio web activo) | Dominio `cghocontadores.mx` | Alta del número definitivo de WhatsApp Cloud API. **Desde el 2026-11-12 hay un número disponible para pruebas reales**: las verificaciones con teléfono del plan vigente ya no esperan esto |
 | NS de `cghocontadores.mx` (o un subdominio) apuntando a Cloudflare | Dominio `cghocontadores.mx` | Túnel nombrado estable para producción — mientras tanto, *quick tunnel* sin dominio |
-| Proveedor de canal para eventos de alerta de Meta (Telegram vs. correo, no decidido) | Este repo | `services/alerts/` hoy solo loguea; no hay integración real de notificación |
+| Proveedor de canal para eventos de alerta de Meta (Telegram vs. correo, no decidido) | Este repo | `services/alerts/` hoy solo loguea; no hay integración real de notificación. Propuesta en la orden B10 del plan vigente (un check de healthchecks.io), en espera de visto bueno |
 
 ## Fases
 
