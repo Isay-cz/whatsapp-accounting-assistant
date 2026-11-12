@@ -28,9 +28,9 @@ services:
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
       DEBUG: ${DEBUG:-false}
-    # Sin `ports`: el webhook se expone por Cloudflare Tunnel, no publicando un
-    # puerto al host (CLAUDE.md, decisión #17). Publicarlo además chocaba con
-    # lo que ya escucha en 8000 en el servidor.
+    # Sin `ports`: el webhook entra por el Caddy del stack de cgho-ops, no
+    # publicando un puerto al host (CLAUDE.md, decisión #17). Publicarlo además
+    # chocaba con lo que ya escucha en 8000 en el servidor.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       cgho_net:

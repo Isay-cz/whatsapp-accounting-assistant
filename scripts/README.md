@@ -62,9 +62,8 @@ server-side (decisión #8).
 ## Requisitos del entorno
 
 1. **Ruta del proxy hacia el bot.** El bot no publica puertos (decisión #17).
-   En producción eso lo resuelve Cloudflare Tunnel; en una VM de prueba sin
-   dominio en Cloudflare, la vía es el Caddy que ya administra el certificado
-   del stack de cgho-ops:
+   La vía es el Caddy del stack de cgho-ops, que ya administra el certificado
+   (Cloudflare Tunnel sigue sin decidirse: CLAUDE.md, decisión #17):
 
    ```caddy
    handle /bot/* {

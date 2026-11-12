@@ -55,8 +55,8 @@ services:
       DEBUG: ${DEBUG:-false}
     # No bind mount (code is baked into the image) and no --reload command
     # override -- the image's own CMD/entrypoint runs as built.
-    # Still no "ports" -- consistent with CLAUDE.md decision #17. Real webhook
-    # exposure via Cloudflare Tunnel is a separate step, not part of this test.
+    # Still no "ports" -- consistent with CLAUDE.md decision #17. The webhook
+    # comes in through the Caddy of the cgho-ops stack (/bot/webhook).
     networks:
       cgho_net:
         # Mirrors the "tickets-api" alias on the other stack, for the same

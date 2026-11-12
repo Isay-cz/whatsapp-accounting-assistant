@@ -48,7 +48,7 @@ Meta Cloud API ──► POST /webhook
                        ├─► ¿Prioridad? → botones alta/media/baja
                        │
                        ▼
-                POST /tickets (sistema de tickets)
+                POST /internal/tickets (sistema de tickets)
                        │
                        └─► Confirmación al trabajador por WhatsApp
 ```
@@ -125,32 +125,15 @@ cp .env.example .env
 docker compose up
 ```
 
-### 3. Correr migraciones
+Las migraciones corren solas al arrancar el contenedor (`api/entrypoint.sh` ejecuta `alembic upgrade head`); no hay que lanzarlas a mano.
 
-```bash
-docker compose exec api alembic upgrade head
-```
+### 3. Dar de alta a un trabajador
 
-### 4. Agregar un worker de prueba
+No se captura aquí. La whitelist se sincroniza sola desde el sistema de tickets (CLAUDE.md, decisión #15): en su pantalla de Usuarios, ponerle a la persona su número de WhatsApp y prender la columna **Bot**. El bot lo ve en su siguiente ciclo de poll (`WORKER_SYNC_INTERVAL_SECONDS`, 5 minutos por default). Una fila insertada a mano en `workers` se desactiva en ese mismo ciclo, porque no aparece en el roster.
 
-```bash
-docker compose exec api python -c "
-import asyncio
-from database import AsyncSessionLocal
-from models.orm import Worker
+### 4. Registrar el webhook en Meta
 
-async def main():
-    async with AsyncSessionLocal() as db:
-        db.add(Worker(phone_number='+521XXXXXXXXXX', name='Tu nombre', is_active=True))
-        await db.commit()
-
-asyncio.run(main())
-"
-```
-
-### 5. Registrar el webhook en Meta
-
-En Meta for Developers → tu app → WhatsApp → Configuration, apunta el webhook a `https://tu-dominio/webhook` con el `META_VERIFY_TOKEN` configurado en `.env`.
+En Meta for Developers → tu app → WhatsApp → Configuration, apunta el webhook a `https://<dominio>/bot/webhook` con el `META_VERIFY_TOKEN` configurado en `.env`. El prefijo `/bot` lo pone el Caddy del stack de cgho-ops, que es por donde entra el webhook hoy (CLAUDE.md, decisión #17).
 
 ---
 

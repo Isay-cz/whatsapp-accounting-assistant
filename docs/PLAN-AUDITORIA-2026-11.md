@@ -62,7 +62,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | Orden | Qué | Dif. | Depende de | Estado |
 |---|---|---|---|---|
 | B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | Pendiente |
-| B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | Pendiente |
+| B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | Pendiente (afecta a más de la mitad de los clientes reales) |
 | B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
 | B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | Pendiente |
 | B5 | Llave de idempotencia y candado al crear el ticket | 🟡 | pareja: O3 de cgho-ops | Pendiente |
@@ -70,8 +70,8 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | B7 | Deduplicación atómica y mensajes que no se pierden en un reinicio | 🟡 | — | Pendiente |
 | B8 | Ventana de reintento tras un fallo; una sesión no pisa a otra | 🟡 | B5 | Pendiente |
 | B9 | `/health` que revisa Postgres y Redis; healthcheck en el compose | 🟢 | — | Pendiente |
-| B10 | Canal de alertas de Meta | 🟢 | visto bueno del dueño | Pendiente |
-| B11 | Documentación al día | 🟢 | — | Pendiente |
+| B10 | Canal de alertas de Meta (healthchecks.io, aprobado el 2026-11-12) | 🟢 | — | Pendiente |
+| B11 | Documentación al día | 🟢 | — | **Hecha (2026-11-12)** |
 | B12 | Dependencias: Dependabot y foto del contrato | 🟡 | O8 de cgho-ops | Pendiente |
 | B13 | Imagen sin root | 🟡 | B3 | Pendiente |
 | M1 | Recibir medios: webhook, descarga de Meta y bitácora | 🟡 | B1, B7 | Pendiente |
@@ -80,7 +80,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | M4 | Extracción con Claude Haiku | 🟡 | M2 | Pendiente |
 | M5 | Prueba de humo con medios y con el teléfono real | 🟡 | M3, M4 | Pendiente |
 
-Orden sugerido: B1, B2, B4, B6, B9, B11 (rápidas) → B3 → B5 → B7 → B8 → B10 →
+Orden sugerido: B1, B2, B4, B6, B9, B10 (rápidas) → B3 → B5 → B7 → B8 →
 M1…M5 → B12, B13.
 
 ---
@@ -124,6 +124,10 @@ prueba; revisar que ninguno caiga en la lista de marcadores.
 un botón admite 20 caracteres y el de una fila de lista, 24. Con un nombre más
 largo Meta rechaza el mensaje, la tarea muere y el trabajador no recibe nada.
 `scripts/meta_sink.py` no valida longitudes, por eso no se ha visto.
+
+**No es un caso raro.** En la lista real de clientes del despacho (132 al
+2026-11-12), 71 nombres pasan de 24 caracteres y 99 pasan de 20: más de la
+mitad no cabría como título de una fila.
 
 **Cambios.**
 
@@ -310,28 +314,36 @@ de seguridad (`security`). `routes/webhook.py` ya los separa y los pasa a
 Meta restringe el número, el bot deja de funcionar y nadie se entera hasta que
 alguien nota que no contesta.
 
-**Propuesta (pendiente del visto bueno del dueño).** Usar healthchecks.io, que
-el sistema de tickets ya usa para sus latidos (su decisión #43): un check
-propio, y el bot le manda un `POST` a `<URL>/fail` con el aviso en el cuerpo.
+**Decidido (dueño, 2026-11-12).** Usar healthchecks.io, que el sistema de
+tickets ya usa para sus latidos (su decisión #43): un check propio, y el bot le
+manda un `POST` a `<URL>/fail` con el aviso en el cuerpo.
 healthchecks.io notifica por los canales que ya estén configurados ahí. No
 agrega proveedor, cuenta ni dependencia.
 
 **Cambios.** `HealthchecksAlertNotifier` detrás del protocolo `AlertNotifier`
 que ya existe; se usa si `ALERTS_HEALTHCHECK_URL` está definida y si no, sigue
 el de log. Nunca lanza: un fallo al avisar se registra y el webhook responde
-200 igual (decisión #11). Actualizar la fila de pendientes de `CLAUDE.md`.
+200 igual (decisión #11). Al implementarlo, escribir la decisión en `CLAUDE.md`
+(la siguiente libre) y quitar la fila de pendientes.
 
-### B11 — Documentación al día 🟢
+### B11 — Documentación al día 🟢 — hecha el 2026-11-12
 
-- `CLAUDE.md` describe un servicio `cloudflared` en `docker-compose.yml` y un
-  `cloudflared/config.yml` versionado. No existen: marcarlo como pendiente (el
-  túnel nombrado espera al dominio) en vez de describirlo como hecho.
-- `docs/bot-diseno-flujo-cliente.md` dice que una sola coincidencia de cliente
-  se asigna directo. Contradice la decisión #5: corregirlo, o marcar el
-  documento como histórico.
-- `README.md`: el paso de migrar a mano sobra (lo hace el entrypoint); el
-  diagrama dice `POST /tickets` y es `POST /internal/tickets`; el ejemplo de
-  alta manual de un trabajador ya no aplica (decisión #15).
+- `CLAUDE.md` describía un servicio `cloudflared` y un `cloudflared/config.yml`
+  que no existen. Ahora dice lo que hay: el webhook entra por el Caddy de
+  cgho-ops, y Cloudflare Tunnel queda **en revisión** dentro de la decisión #17,
+  con el criterio para decidirlo. La estructura del repositorio ya es la real.
+- `docs/bot-diseno-flujo-cliente.md` queda marcado como diseño inicial, con lo
+  que cambió corregido: el cliente siempre se pregunta (decisión #5) y el buffer
+  vive en Redis.
+- `README.md`: las migraciones corren solas, el alta de trabajadores es desde el
+  sistema de tickets (decisión #15), el diagrama dice `POST /internal/tickets` y
+  la URL del webhook lleva el prefijo `/bot`.
+- Comentarios de `docker-compose.yml`, `docker-compose.prod.yml` y
+  `scripts/README.md` que daban el túnel por hecho.
+
+Queda para sus órdenes, porque no es solo texto: el comentario de
+`docker-compose.prod.yml` que sugiere valores provisionales para `META_*` (B1) y
+el `TODO` del nombre de la imagen (B3).
 
 ### B12 — Dependabot y foto del contrato 🟡
 
