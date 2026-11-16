@@ -26,6 +26,16 @@ async def start_session(redis: Redis, phone: str, state: dict[str, Any], ttl_sec
     )
 
 
+async def update_session(redis: Redis, phone: str, state: dict[str, Any]) -> bool:
+    """Reescribe el estado sin tocar su vencimiento (`KEEPTTL`): anotar algo
+    en la sesión no debe regalarle tiempo al paso en curso. Con `XX`, si la
+    sesión ya venció no se crea de nuevo; sin él quedaría una llave sin
+    vencimiento. Devuelve si había sesión."""
+    return bool(
+        await redis.set(session_key(phone), json.dumps(state), xx=True, keepttl=True)
+    )
+
+
 async def get_session(redis: Redis, phone: str) -> dict[str, Any] | None:
     raw = await redis.get(session_key(phone))
     return json.loads(raw) if raw else None

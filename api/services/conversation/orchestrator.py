@@ -30,6 +30,7 @@ PRIORITY_OPTIONS = [
     {"id": Priority.baja.value, "title": "Baja"},
 ]
 DEFAULT_PRIORITY = Priority.media.value
+VALID_PRIORITIES = frozenset(p.value for p in Priority)
 
 # Opción fija que acompaña siempre a las coincidencias de clientes. Existe para
 # que el trabajador pueda decir "es trabajo interno" de inmediato, en vez de
@@ -129,10 +130,29 @@ class ConversationFlow:
         if state is None:
             return
         step = state.get("step")
+        # El `reply_id` se valida contra lo que este paso ofreció. Un botón
+        # viejo sigue vivo en el chat: sin esto, tocar «Alta» de un ticket
+        # anterior mientras se espera el cliente dejaba `client_id = "alta"`,
+        # y cada intento de crear el ticket daba 422.
         if step == STEP_AWAITING_CLIENT:
-            client_id = None if reply_id == NO_CLIENT_OPTION_ID else reply_id
+            if reply_id == NO_CLIENT_OPTION_ID:
+                client_id = None
+            elif reply_id in state.get("client_options", []):
+                client_id = reply_id
+            else:
+                logger.info(
+                    "Respuesta ignorada para %s: %r no es un cliente ofrecido en esta sesión",
+                    phone,
+                    reply_id,
+                )
+                return
             await self._ask_priority(phone, state, client_id=client_id)
         elif step == STEP_AWAITING_PRIORITY:
+            if reply_id not in VALID_PRIORITIES:
+                logger.info(
+                    "Respuesta ignorada para %s: %r no es una prioridad", phone, reply_id
+                )
+                return
             await self._finish(phone, state, priority=reply_id)
 
     # -- Cierre de buffer -------------------------------------------------
@@ -189,6 +209,21 @@ class ConversationFlow:
         # automáticamente sería adivinar, y un cliente mal asignado en
         # silencio es peor que un ticket sin cliente (CLAUDE.md, decisión #5).
         options = [_client_option(r.id, r.name) for r in results[:MAX_CLIENT_MATCHES]]
+        # Lo ofrecido queda en la sesión: es contra lo que se valida la
+        # respuesta. Se acumula, porque si el trabajador escribe otro nombre
+        # la lista anterior sigue en su chat y tocarla es una elección válida.
+        #
+        # La sesión se vuelve a leer: la búsqueda sale a la red, y si mientras
+        # tanto venció la espera de cliente el flujo ya pasó a prioridad.
+        # Escribir el estado de antes lo regresaría a un paso sin vigilante.
+        state = await session.get_session(self._redis, phone)
+        if state is None or state.get("step") != STEP_AWAITING_CLIENT:
+            logger.info("La espera de cliente de %s venció durante la búsqueda", phone)
+            return
+        offered = set(state.get("client_options", [])) | {o["id"] for o in options}
+        await session.update_session(
+            self._redis, phone, {**state, "client_options": sorted(offered)}
+        )
         options.append({"id": NO_CLIENT_OPTION_ID, "title": NO_CLIENT_OPTION_TITLE})
 
         # Siempre por lista, también con una o dos coincidencias: el título de

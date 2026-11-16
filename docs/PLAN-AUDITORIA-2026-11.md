@@ -66,7 +66,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
 | B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | **Hecha (2026-11-16)** |
 | B5 | Llave de idempotencia y candado al crear el ticket | 🟡 | pareja: O3 de cgho-ops | Pendiente |
-| B6 | Validar las respuestas interactivas contra el paso | 🟢 | — | Pendiente |
+| B6 | Validar las respuestas interactivas contra el paso | 🟢 | — | **Hecha (2026-11-16)** |
 | B7 | Deduplicación atómica y mensajes que no se pierden en un reinicio | 🟡 | — | Pendiente |
 | B8 | Ventana de reintento tras un fallo; una sesión no pisa a otra | 🟡 | B5 | Pendiente |
 | B9 | `/health` que revisa Postgres y Redis; healthcheck en el compose | 🟢 | — | Pendiente |
@@ -267,6 +267,14 @@ trabajador toca un botón de prioridad viejo mientras se espera el cliente, qued
 
 **Pruebas nuevas.** Botón de prioridad durante la espera de cliente → la sesión
 no cambia. Id de cliente que no se ofreció → se ignora.
+
+**Al ejecutarla (2026-11-16).** Dos precisiones. `client_options` **se
+acumula**: si el trabajador escribe otro nombre, la primera lista sigue en su
+chat y escoger de ella es válido. Y antes de anotar las opciones la sesión se
+vuelve a leer: la búsqueda sale a la red, y si la espera de cliente vencía
+mientras tanto, reescribir el estado de antes regresaba el flujo a un paso sin
+vigilante (el bloque se habría perdido). `update_session` usa `XX` además de
+`KEEPTTL`, para no revivir sin vencimiento una sesión que ya expiró.
 
 ### B7 — Deduplicación atómica y mensajes que no se pierden 🟡
 

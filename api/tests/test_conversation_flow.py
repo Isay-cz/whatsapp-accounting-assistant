@@ -187,6 +187,110 @@ async def test_un_nombre_enorme_tambien_cabe_en_la_descripcion(redis_client):
     assert fila["description"].endswith("…")
 
 
+async def test_boton_de_prioridad_viejo_no_se_toma_como_cliente(redis_client):
+    """Los botones de un ticket anterior siguen en el chat. Tocar «Alta»
+    mientras se espera el cliente no puede dejar `client_id = "alta"`."""
+    worker = make_worker()
+    flow, llm, meta, ticket_system, recorder = make_flow(
+        redis_client, worker, search_results=[ClientSearchResult(id="c1", name="Cliente Uno")]
+    )
+    phone = "16315551210"
+
+    await flow.on_buffer_close(phone, block("mensaje"))
+    antes = await session_module.get_session(redis_client, phone)
+    await flow.handle_interactive_reply(phone, "alta")
+    assert await session_module.get_session(redis_client, phone) == antes
+
+    # Igual con la lista ya mandada: sigue esperando un cliente de verdad.
+    await flow.handle_incoming_message(phone, "Cliente")
+    await flow.handle_interactive_reply(phone, "alta")
+    state = await session_module.get_session(redis_client, phone)
+    assert state["step"] == "awaiting_client"
+    assert "client_id" not in state
+    ticket_system.create_ticket.assert_not_awaited()
+
+
+async def test_cliente_que_no_se_ofrecio_se_ignora(redis_client):
+    worker = make_worker()
+    flow, llm, meta, ticket_system, recorder = make_flow(
+        redis_client, worker, search_results=[ClientSearchResult(id="c1", name="Cliente Uno")]
+    )
+    phone = "16315551211"
+
+    await flow.on_buffer_close(phone, block("mensaje"))
+    await flow.handle_incoming_message(phone, "Cliente")
+    await flow.handle_interactive_reply(phone, "otro-cliente")
+
+    state = await session_module.get_session(redis_client, phone)
+    assert state["step"] == "awaiting_client"
+    assert state["client_options"] == ["c1"]
+
+
+async def test_la_lista_anterior_sigue_valiendo_si_se_busca_otro_nombre(redis_client):
+    """Si el trabajador escribe otro nombre, la primera lista sigue en su
+    chat: escoger de ella es una elección legítima."""
+    worker = make_worker()
+    flow, llm, meta, ticket_system, recorder = make_flow(redis_client, worker)
+    phone = "16315551212"
+    ticket_system.search_clients.side_effect = [
+        [ClientSearchResult(id="c1", name="Cliente Uno")],
+        [ClientSearchResult(id="c2", name="Cliente Dos")],
+    ]
+
+    await flow.on_buffer_close(phone, block("mensaje"))
+    await flow.handle_incoming_message(phone, "Uno")
+    await flow.handle_incoming_message(phone, "Dos")
+    await flow.handle_interactive_reply(phone, "c1")
+
+    state = await session_module.get_session(redis_client, phone)
+    assert state["step"] == "awaiting_priority"
+    assert state["client_id"] == "c1"
+
+
+async def test_respuesta_que_no_es_prioridad_se_ignora(redis_client):
+    """Tocar un cliente de la lista cuando ya se pregunta la prioridad no
+    puede mandar un UUID como prioridad (422 en cada reintento)."""
+    worker = make_worker()
+    flow, llm, meta, ticket_system, recorder = make_flow(
+        redis_client, worker, search_results=[ClientSearchResult(id="c1", name="Cliente Uno")]
+    )
+    phone = "16315551213"
+
+    await flow.on_buffer_close(phone, block("mensaje"))
+    await flow.handle_incoming_message(phone, "Cliente")
+    await flow.handle_interactive_reply(phone, "c1")
+    await flow.handle_interactive_reply(phone, "c1")  # doble toque de la lista
+
+    ticket_system.create_ticket.assert_not_awaited()
+    state = await session_module.get_session(redis_client, phone)
+    assert state["step"] == "awaiting_priority"
+
+    await flow.handle_interactive_reply(phone, "media")
+    ticket_system.create_ticket.assert_awaited_once()
+
+
+async def test_la_busqueda_que_termina_tarde_no_regresa_el_paso(redis_client):
+    """Si la espera de cliente vence mientras la búsqueda está en la red, el
+    flujo ya pasó a prioridad: la lista no se manda y el paso no retrocede."""
+    worker = make_worker()
+    flow, llm, meta, ticket_system, recorder = make_flow(redis_client, worker)
+    phone = "16315551214"
+
+    async def busqueda_lenta(query):
+        state = await session_module.get_session(redis_client, phone)
+        await flow._ask_priority(phone, state, client_id=None)  # venció la espera
+        return [ClientSearchResult(id="c1", name="Cliente Uno")]
+
+    ticket_system.search_clients.side_effect = busqueda_lenta
+
+    await flow.on_buffer_close(phone, block("mensaje"))
+    await flow.handle_incoming_message(phone, "Cliente")
+
+    meta.send_list.assert_not_awaited()
+    state = await session_module.get_session(redis_client, phone)
+    assert state["step"] == "awaiting_priority"
+
+
 async def test_zero_client_matches_proceeds_with_null_client(redis_client):
     worker = make_worker()
     flow, llm, meta, ticket_system, recorder = make_flow(redis_client, worker, search_results=[])
