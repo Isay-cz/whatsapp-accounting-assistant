@@ -33,8 +33,8 @@ Complementa a `whatsapp-webhook-reference.md` (ese cubre qué manda Meta; este c
 - **Ninguna coincidencia** → sigue a la prioridad, y el ticket queda sin cliente.
 
 **Mecanismo — Listas y Botones:**
-- Hasta 10 opciones (9 coincidencias más «Sin cliente») → **Mensaje de Lista**.
-- Hasta 3 opciones → **Botones de Respuesta Rápida**. La prioridad (alta, media, baja) usa botones.
+- Los clientes van **siempre** por **Mensaje de Lista** (hasta 10 opciones: 9 coincidencias más «Sin cliente»), también cuando son una o dos: el título de un botón admite 20 caracteres y la mayoría de los nombres no cabe. En la lista el título se recorta a 24 y el nombre completo va en la descripción de la fila.
+- La prioridad (alta, media, baja) usa **Botones de Respuesta Rápida**.
 
 Esto garantiza que el webhook reciba un **ID exacto** (dato estructurado) al hacer clic, en vez de texto libre — elimina errores de escritura y facilita la asignación directa en base de datos.
 
