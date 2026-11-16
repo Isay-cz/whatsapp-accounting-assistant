@@ -47,7 +47,12 @@ from .conftest import (
 )
 
 DEEPSEEK_URL = "https://api.deepseek.test/chat/completions"
-META_URL = "https://graph.facebook.com/v21.0/123456123/messages"
+# La versión sale de la configuración y no se escribe aquí: cuando el default
+# subió de v21.0 a v26.0, esta URL fija dejó la suite en rojo sin que nadie
+# lo notara.
+META_URL = (
+    f"https://graph.facebook.com/{get_settings().meta_api_version}/123456123/messages"
+)
 TICKET_SYSTEM_URL = "http://ticket-system.test"
 CREATE_TICKET_URL = f"{TICKET_SYSTEM_URL}/internal/tickets"
 

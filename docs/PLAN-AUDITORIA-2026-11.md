@@ -32,7 +32,7 @@ docker compose -f docker-compose.test.yml up -d
 pip install -r api/requirements-dev.txt
 export DATABASE_URL=postgresql://bot_test:bot_test@localhost:55432/bot_test
 export REDIS_URL=redis://localhost:56379/1
-alembic upgrade head        # desde donde esté alembic.ini; comprobarlo antes
+alembic upgrade head        # desde la raíz del repo: ahí vive alembic.ini
 cd api && pytest
 ```
 
@@ -64,7 +64,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | Pendiente |
 | B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | Pendiente (afecta a más de la mitad de los clientes reales) |
 | B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
-| B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | Pendiente |
+| B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | **Hecha (2026-11-16)** |
 | B5 | Llave de idempotencia y candado al crear el ticket | 🟡 | pareja: O3 de cgho-ops | Pendiente |
 | B6 | Validar las respuestas interactivas contra el paso | 🟢 | — | Pendiente |
 | B7 | Deduplicación atómica y mensajes que no se pierden en un reinicio | 🟡 | — | Pendiente |
@@ -195,6 +195,16 @@ que empujar el primer tag (`v0.1.0`) para desplegar.
    llaves `bot:*`; todas las de este repo ya llevan ese prefijo
    (`services/buffer/keys.py`). `scripts/smoke_test.py` lee Redis: revisar que
    use esas credenciales.
+
+**Al ejecutarla (2026-11-16).** La suite estaba en rojo desde que el default
+subió a `v26.0` (`dd2c518`): `tests/test_ticket_lifecycle.py` tenía `v21.0`
+escrito a mano en la URL de Graph API y fallaban sus nueve pruebas; como el CI
+no corre pruebas (B3), nadie lo vio. Ahora la URL sale de la configuración.
+`SQL_ECHO` solo lo inyecta el compose de desarrollo. `scripts/smoke_test.py`
+ya entra a Redis con el usuario y la contraseña del `REDIS_URL` del bot (la
+contraseña por `REDISCLI_AUTH`, fuera de los argumentos); sin usuarios en
+Redis se comporta como antes. De paso: las instrucciones de pruebas decían
+correr `alembic` desde `api/`, donde no hay `alembic.ini`.
 
 ### B5 — Llave de idempotencia y candado 🟡
 

@@ -5,11 +5,12 @@ import pytest
 from services.meta.client import MetaClient
 
 PHONE_NUMBER_ID = "123456123"
-EXPECTED_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+API_VERSION = "v26.0"
+EXPECTED_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
 
 def _client() -> MetaClient:
-    return MetaClient(access_token="test-token", phone_number_id=PHONE_NUMBER_ID, api_version="v21.0")
+    return MetaClient(access_token="test-token", phone_number_id=PHONE_NUMBER_ID, api_version=API_VERSION)
 
 
 async def test_send_text_payload_shape(httpx_mock):
@@ -45,13 +46,13 @@ async def test_base_url_configurable_para_pruebas_de_despliegue(httpx_mock):
     """`base_url` es lo que permite apuntar la salida a `scripts/meta_sink.py`
     en una VM de prueba sin número de Cloud API verificado. El default sigue
     siendo Graph API — lo comprueban las demás pruebas de este archivo."""
-    sink_url = f"http://meta-sink:8099/v21.0/{PHONE_NUMBER_ID}/messages"
+    sink_url = f"http://meta-sink:8099/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
     httpx_mock.add_response(url=sink_url, json={"messages": [{"id": "wamid.sink.1"}]})
 
     client = MetaClient(
         access_token="test-token",
         phone_number_id=PHONE_NUMBER_ID,
-        api_version="v21.0",
+        api_version=API_VERSION,
         base_url="http://meta-sink:8099/",  # la diagonal final no debe duplicarse
     )
     await client.send_text("16315551181", "Ticket #1 creado")

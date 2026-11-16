@@ -21,9 +21,8 @@ services:
     image: ghcr.io/isay-cz/whatsapp-accounting-assistant:latest
     restart: unless-stopped
     # Mismo criterio que el stack de cgho-ops: el driver por defecto crece sin
-    # límite y aquí cada mensaje entrante deja varias líneas (más todavía con
-    # DEBUG=true, que además imprime el texto del mensaje). Llenar el disco del
-    # servidor con logs es otra forma de tirarlo.
+    # límite y aquí cada mensaje entrante deja varias líneas. Llenar el disco
+    # del servidor con logs es otra forma de tirarlo.
     logging:
       driver: json-file
       options:
@@ -45,7 +44,7 @@ services:
       META_VERIFY_TOKEN: ${META_VERIFY_TOKEN}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
-      META_API_VERSION: ${META_API_VERSION:-v21.0}
+      META_API_VERSION: ${META_API_VERSION:-v26.0}
       # Solo se sobrescribe en entornos de prueba, para mandar la salida a
       # scripts/meta_sink.py en vez de a Meta (ver scripts/README.md).
       META_GRAPH_BASE_URL: ${META_GRAPH_BASE_URL:-https://graph.facebook.com}

@@ -49,6 +49,10 @@ class Settings(BaseSettings):
 
     # App
     debug: bool = False
+    # Eco de cada sentencia SQL con sus parámetros, es decir, con el texto de
+    # los mensajes de los clientes. Va aparte de `debug` para que prender uno
+    # no vuelque conversaciones al log sin querer. Solo desarrollo.
+    sql_echo: bool = False
 
 
 @lru_cache

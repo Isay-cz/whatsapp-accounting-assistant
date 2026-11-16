@@ -4,7 +4,7 @@
 Existe por una sola razón: sin número de Cloud API verificado, todo lo que el
 bot manda hacia afuera (la pregunta de cliente, los botones de prioridad, la
 confirmación "Ticket #N creado") muere en un 404 contra
-`https://graph.facebook.com/v21.0//messages`, y el flujo se corta justo
+`https://graph.facebook.com/<versión>//messages`, y el flujo se corta justo
 después de cerrar el buffer. Apuntando `META_GRAPH_BASE_URL` aquí, el flujo
 completo corre de verdad en el entorno desplegado y además queda registrado
 lo que el trabajador *habría* recibido, que es lo que el script de humo

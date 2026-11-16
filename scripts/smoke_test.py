@@ -38,6 +38,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -45,7 +46,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 
 # -- Constantes del contrato que se está verificando -------------------------
 # Copiadas a propósito de services/conversation/orchestrator.py en vez de
@@ -142,17 +143,23 @@ def section(title: str) -> None:
     print(f"{Colors.BOLD}{title}{Colors.END}")
 
 
-def sh(*args: str, check: bool = True, cwd: Path | None = None) -> str:
+def sh(
+    *args: str, check: bool = True, cwd: Path | None = None, env: dict | None = None
+) -> str:
     """Ejecuta un comando y devuelve stdout. Sin shell: los argumentos van
     tal cual, así que un nombre de contenedor o una consulta SQL con
     espacios no necesita comillas.
 
     `cwd` importa para `docker compose`: sin `-f`, busca el archivo de
     compose y el `.env` en el directorio de trabajo, no en el que le pase
-    `--project-directory`."""
+    `--project-directory`.
+
+    `env` agrega variables al entorno del comando. Es por donde viaja un
+    secreto: lo que va en `args` se imprime completo si el comando falla."""
     proc = subprocess.run(
         args, capture_output=True, text=True, timeout=300,
         cwd=str(cwd) if cwd else None,
+        env={**os.environ, **env} if env else None,
     )
     if check and proc.returncode != 0:
         raise SmokeError(
@@ -242,6 +249,20 @@ def _redis_db_index(redis_url: str) -> int:
     return int(path) if path.isdigit() else 0
 
 
+def _redis_credentials(redis_url: str) -> tuple[str, str]:
+    """Usuario y contraseña de una URL `redis://usuario:contraseña@host/N`.
+
+    Vacíos si la URL no los trae, que es el caso mientras el Redis compartido
+    no tenga usuarios (orden O4 de cgho-ops). Con usuarios, `redis-cli` sin
+    credenciales contesta NOAUTH a todo: hay que entrar como el mismo usuario
+    que el bot, que además es el único que puede tocar las llaves `bot:*`.
+    """
+    parts = urlsplit(redis_url) if redis_url else None
+    if parts is None:
+        return "", ""
+    return unquote(parts.username or ""), unquote(parts.password or "")
+
+
 def wait_for(predicate, *, timeout: float, interval: float = 1.0):
     """Espera activa por un efecto asíncrono (cierre del buffer, respuesta de
     DeepSeek, creación del ticket). Devuelve lo que regrese el predicado, o
@@ -279,6 +300,9 @@ class Deployment:
         # falla, devuelve vacío — así que un "la sesión se limpió" pasaría sin
         # haber mirado nunca la sesión. El índice se toma de la URL real.
         self.redis_db = _redis_db_index(self.bot_env.get("REDIS_URL", ""))
+        self.redis_user, self.redis_password = _redis_credentials(
+            self.bot_env.get("REDIS_URL", "")
+        )
 
         self.sink_name = args.sink_name
         self.sink_port = args.sink_port
@@ -320,8 +344,16 @@ class Deployment:
     # -- Redis ----------------------------------------------------------
 
     def redis_cli(self, *args: str) -> str:
+        # La contraseña viaja por REDISCLI_AUTH y no como `--pass`: `-e VAR`
+        # sin valor la toma del entorno de este proceso, así que no aparece en
+        # los argumentos (que `sh` imprime si el comando falla) ni en un aviso
+        # de redis-cli mezclado con la salida.
+        auth = ["-e", "REDISCLI_AUTH"] if self.redis_password else []
+        user = ["--user", self.redis_user] if self.redis_user else []
         return sh(
-            "docker", "exec", self.redis, "redis-cli", "-n", str(self.redis_db), *args
+            "docker", "exec", *auth, self.redis,
+            "redis-cli", *user, "-n", str(self.redis_db), *args,
+            env={"REDISCLI_AUTH": self.redis_password} if self.redis_password else None,
         )
 
     def clear_phone_state(self, phone: str) -> None:

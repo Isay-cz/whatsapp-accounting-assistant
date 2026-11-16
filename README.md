@@ -143,12 +143,11 @@ Requieren un Postgres y un Redis desechables (no el stack compartido de producci
 
 ```bash
 docker compose -f docker-compose.test.yml up -d
-cd api
-pip install -r requirements-dev.txt
+pip install -r api/requirements-dev.txt
 export DATABASE_URL=postgresql://bot_test:bot_test@localhost:55432/bot_test
 export REDIS_URL=redis://localhost:56379/1
-alembic upgrade head
-pytest
+alembic upgrade head        # desde la raíz del repo: ahí vive alembic.ini
+cd api && pytest
 ```
 
 `tests/test_ticket_lifecycle.py` recorre el ciclo de vida completo de un ticket sin estar conectado a Meta: entra por el webhook firmado y sale en `POST /internal/tickets`, con el buffer, las sesiones y el flujo conversacional reales. Solo se interceptan las respuestas de red (Meta, DeepSeek, sistema de tickets), así que también verifica la forma de los requests salientes. Cubre mensaje único, varios mensajes agrupados por el refresh del debounce, reintento de Meta con el mismo `wamid`, fallo del LLM, "Sin cliente" y los dos timeouts.

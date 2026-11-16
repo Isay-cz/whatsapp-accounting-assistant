@@ -15,7 +15,7 @@ class MetaClient:
         self,
         access_token: str,
         phone_number_id: str,
-        api_version: str = "v21.0",
+        api_version: str,
         base_url: str = GRAPH_BASE_URL,
     ):
         self._access_token = access_token

@@ -66,11 +66,18 @@ server-side (decisión #8).
    (Cloudflare Tunnel sigue sin decidirse: CLAUDE.md, decisión #17):
 
    ```caddy
-   handle /bot/* {
+   @bot path /bot/webhook /bot/health
+   handle @bot {
        uri strip_prefix /bot
        reverse_proxy bot-api:8000
    }
+   handle /bot/* {
+       respond 404
+   }
    ```
+
+   Solo pasan el webhook y el health; lo demás del bot responde 404 (orden O1
+   del plan de cgho-ops).
 
    `bot-api` es el alias del bot en `cgho_net` — **no** `api`, que en esa red
    resuelve indistintamente a este contenedor o al del sistema de tickets,
@@ -110,7 +117,9 @@ Está pensado para una VM de prueba: asume que nadie más le está mandando
 mensajes al bot mientras corre, porque limpia las llaves de Redis del teléfono
 que usa antes de empezar.
 
-Lee la base de Redis que indica el `REDIS_URL` del bot, no la 0. Vale la pena
+Lee la base de Redis que indica el `REDIS_URL` del bot, no la 0, y entra con
+el usuario y la contraseña de esa misma URL si los trae (cuando el Redis
+compartido tenga usuarios, orden O4 de cgho-ops). Vale la pena
 saberlo si algún día se depura a mano: `redis-cli` sin `-n` habla con la 0, y
 ahí las llaves `bot:*` no existen — no da error, devuelve vacío, así que una
 verificación del tipo "la sesión se limpió" pasaría sin haber mirado nunca una

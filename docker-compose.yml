@@ -20,7 +20,7 @@ services:
       META_VERIFY_TOKEN: ${META_VERIFY_TOKEN}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
-      META_API_VERSION: ${META_API_VERSION:-v21.0}
+      META_API_VERSION: ${META_API_VERSION:-v26.0}
       # Solo se sobrescribe en entornos de prueba, para mandar la salida a
       # scripts/meta_sink.py en vez de a Meta (ver scripts/README.md).
       META_GRAPH_BASE_URL: ${META_GRAPH_BASE_URL:-https://graph.facebook.com}
@@ -28,6 +28,9 @@ services:
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
       DEBUG: ${DEBUG:-false}
+      # Imprime cada sentencia SQL con sus parámetros (el texto de los
+      # mensajes). Solo existe en este compose: producción no lo inyecta.
+      SQL_ECHO: ${SQL_ECHO:-false}
     # Sin `ports`: el webhook entra por el Caddy del stack de cgho-ops, no
     # publicando un puerto al host (CLAUDE.md, decisión #17). Publicarlo además
     # chocaba con lo que ya escucha en 8000 en el servidor.
