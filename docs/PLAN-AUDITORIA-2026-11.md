@@ -41,7 +41,7 @@ cd api && pytest
 1. Pegar el resultado real de `pytest` en el resumen.
 2. Marcar la orden en la tabla de abajo, en el mismo commit.
 3. Una decisión nueva va al final de la lista numerada de `CLAUDE.md` (la
-   siguiente libre al escribir este plan es la #22).
+   siguiente libre es la #23; la #22 es el canal de alertas, B10).
 4. Commits pequeños, en español, con el estilo del repo (`fix: …`, `feat: …`,
    `ci: …`).
 
@@ -70,7 +70,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | B7 | Deduplicación atómica y mensajes que no se pierden en un reinicio | 🟡 | — | Pendiente |
 | B8 | Ventana de reintento tras un fallo; una sesión no pisa a otra | 🟡 | B5 | Pendiente |
 | B9 | `/health` que revisa Postgres y Redis; healthcheck en el compose | 🟢 | — | **Hecha (2026-11-16)** |
-| B10 | Canal de alertas de Meta (healthchecks.io, aprobado el 2026-11-12) | 🟢 | — | Pendiente |
+| B10 | Canal de alertas de Meta (healthchecks.io, aprobado el 2026-11-12) | 🟢 | — | **Hecha (2026-11-16)**; falta dar de alta el check |
 | B11 | Documentación al día | 🟢 | — | **Hecha (2026-11-12)** |
 | B12 | Dependencias: Dependabot y foto del contrato | 🟡 | O8 de cgho-ops | Pendiente |
 | B13 | Imagen sin root | 🟡 | B3 | Pendiente |
@@ -369,6 +369,23 @@ que ya existe; se usa si `ALERTS_HEALTHCHECK_URL` está definida y si no, sigue
 el de log. Nunca lanza: un fallo al avisar se registra y el webhook responde
 200 igual (decisión #11). Al implementarlo, escribir la decisión en `CLAUDE.md`
 (la siguiente libre) y quitar la fila de pendientes.
+
+**Al ejecutarla (2026-11-16).** Es la decisión #22 de `CLAUDE.md`. Además de
+lo escrito: las alertas salen como tarea en segundo plano (antes se esperaban
+dentro de la petición, y un healthchecks.io lento habría retrasado el 200 a
+Meta), y el mensaje de error no lleva la URL del check.
+
+**Verificación humana pendiente.** Dar de alta en healthchecks.io un check
+propio, con el periodo y la gracia al máximo (no recibe pings periódicos, solo
+fallas), y poner su URL en `ALERTS_HEALTHCHECK_URL` del `.env` del servidor.
+
+**Queda por decidir.** healthchecks.io solo notifica cuando un check pasa de
+verde a rojo: tras la primera alerta el check se queda en rojo, y una segunda
+(otro aviso de Meta antes de que alguien lo regrese a verde) queda en su
+registro pero **no notifica**. Hoy la salida es regresarlo a verde a mano
+después de atender cada alerta. La alternativa es que el bot mande un ping de
+éxito antes de cada `/fail`, para que toda alerta notifique; no se hizo porque
+cambia lo aprobado.
 
 ### B11 — Documentación al día 🟢 — hecha el 2026-11-12
 

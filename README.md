@@ -192,6 +192,7 @@ Ver `.env.example` para la lista completa. Se inyectan por Docker Compose (`envi
 | `INTERNAL_API_TOKEN` | Token compartido con el sistema de tickets — solo saliente |
 | `TICKET_SYSTEM_BASE_URL` | Base URL de la API del sistema de tickets. Es `http://tickets-api:8000`, **no** `http://api:8000`: este stack también nombra `api` a su propio servicio y ese nombre resuelve al contenedor local |
 | `WORKER_SYNC_INTERVAL_SECONDS` | Cada cuánto se refresca la whitelist (default 300) |
+| `ALERTS_HEALTHCHECK_URL` | URL de ping de un check de healthchecks.io propio, para las alertas de Meta (cuenta restringida, límite del número a la baja, seguridad). Vacía, solo se escriben en el log. Ver CLAUDE.md, decisión #22 |
 
 ---
 

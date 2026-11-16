@@ -27,6 +27,7 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
+      ALERTS_HEALTHCHECK_URL: ${ALERTS_HEALTHCHECK_URL:-}
       DEBUG: ${DEBUG:-false}
       # Imprime cada sentencia SQL con sus parámetros (el texto de los
       # mensajes). Solo existe en este compose: producción no lo inyecta.

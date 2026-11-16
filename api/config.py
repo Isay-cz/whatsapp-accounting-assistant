@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # retraso es aceptable: son ~22 personas y las altas/bajas son raras.
     worker_sync_interval_seconds: int = 300
 
+    # Alertas de Meta (cuenta restringida, límite del número, seguridad): la
+    # URL de ping de un check de healthchecks.io propio. Vacía = solo al log.
+    alerts_healthcheck_url: str = ""
+
     # App
     debug: bool = False
     # Eco de cada sentencia SQL con sus parámetros, es decir, con el texto de

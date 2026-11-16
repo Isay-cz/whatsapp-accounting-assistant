@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.redis = redis
     app.state.conversation_flow = conversation_flow
-    app.state.alert_notifier = get_alert_notifier()
+    app.state.alert_notifier = get_alert_notifier(settings)
 
     # Re-levanta watchers de buffers/sesiones que quedaron a medias por un
     # restart durante una ventana de debounce (ver CLAUDE.md, services/buffer).

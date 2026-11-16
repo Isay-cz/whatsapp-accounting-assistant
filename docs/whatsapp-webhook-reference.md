@@ -77,7 +77,7 @@ La razón de ser del bot. Aquí llegan los mensajes reales de clientes.
 
 ## Eventos de alerta — notificar por canal separado (no WhatsApp)
 
-Si el problema es el número/WABA mismo, notificar por WhatsApp no sirve — usa Telegram o correo.
+Si el problema es el número/WABA mismo, notificar por WhatsApp no sirve. El canal decidido es un check de healthchecks.io (`ALERTS_HEALTHCHECK_URL`; CLAUDE.md, decisión #22).
 
 ### `account_update`
 Cambios de estado de la cuenta: desconexión, violación de política, revocación.

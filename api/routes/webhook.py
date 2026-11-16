@@ -98,12 +98,18 @@ async def _dispatch_field(
 ) -> None:
     if field == "messages":
         await _handle_messages(value, db, conversation_flow, background_tasks)
+    # Las alertas salen en segundo plano, como el resto del trabajo que sale a
+    # la red: avisar no puede retrasar el 200 a Meta (decisión #11).
     elif field == "account_update":
-        await alert_notifier.notify("account_update", f"event={value.get('event')}")
+        background_tasks.add_task(
+            alert_notifier.notify, "account_update", f"event={value.get('event')}"
+        )
     elif field == "phone_number_quality_update":
-        await _handle_quality_update(value, alert_notifier)
+        _handle_quality_update(value, alert_notifier, background_tasks)
     elif field == "security":
-        await alert_notifier.notify("security", f"event={value.get('event')}")
+        background_tasks.add_task(
+            alert_notifier.notify, "security", f"event={value.get('event')}"
+        )
     elif field in _INFORMATIONAL_FIELDS:
         logger.info("Evento informativo de Meta: field=%s value=%s", field, value)
     elif field == "calls":
@@ -187,12 +193,16 @@ async def _process_message(phone: str, message: dict, conversation_flow: Convers
         logger.info("Tipo de mensaje sin manejar: %s", msg_type)
 
 
-async def _handle_quality_update(value: dict, alert_notifier: AlertNotifier) -> None:
+def _handle_quality_update(
+    value: dict, alert_notifier: AlertNotifier, background_tasks: BackgroundTasks
+) -> None:
     old_limit = value.get("old_limit")
     current_limit = value.get("current_limit")
     if _is_tier_degradation(old_limit, current_limit):
-        await alert_notifier.notify(
-            "phone_number_quality_update", f"Límite bajó de {old_limit} a {current_limit}"
+        background_tasks.add_task(
+            alert_notifier.notify,
+            "phone_number_quality_update",
+            f"Límite bajó de {old_limit} a {current_limit}",
         )
     else:
         logger.info(
