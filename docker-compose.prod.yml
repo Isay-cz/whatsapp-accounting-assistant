@@ -54,6 +54,17 @@ services:
       TICKET_SYSTEM_BASE_URL: ${TICKET_SYSTEM_BASE_URL:-http://tickets-api:8000}
       WORKER_SYNC_INTERVAL_SECONDS: ${WORKER_SYNC_INTERVAL_SECONDS:-300}
       DEBUG: ${DEBUG:-false}
+    healthcheck:
+      # /health toca Postgres y Redis: «sano» significa que el bot puede
+      # atender, no solo que el proceso arrancó. Con Python y no con curl,
+      # porque la imagen `slim` no lo trae; 127.0.0.1 y no localhost, como en
+      # el stack de cgho-ops.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Las migraciones corren antes de levantar uvicorn (entrypoint.sh).
+      start_period: 30s
     # No bind mount (code is baked into the image) and no --reload command
     # override -- the image's own CMD/entrypoint runs as built.
     # Still no "ports" -- consistent with CLAUDE.md decision #17. The webhook

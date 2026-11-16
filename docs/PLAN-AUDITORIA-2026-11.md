@@ -69,7 +69,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | B6 | Validar las respuestas interactivas contra el paso | 🟢 | — | **Hecha (2026-11-16)** |
 | B7 | Deduplicación atómica y mensajes que no se pierden en un reinicio | 🟡 | — | Pendiente |
 | B8 | Ventana de reintento tras un fallo; una sesión no pisa a otra | 🟡 | B5 | Pendiente |
-| B9 | `/health` que revisa Postgres y Redis; healthcheck en el compose | 🟢 | — | Pendiente |
+| B9 | `/health` que revisa Postgres y Redis; healthcheck en el compose | 🟢 | — | **Hecha (2026-11-16)** |
 | B10 | Canal de alertas de Meta (healthchecks.io, aprobado el 2026-11-12) | 🟢 | — | Pendiente |
 | B11 | Documentación al día | 🟢 | — | **Hecha (2026-11-12)** |
 | B12 | Dependencias: Dependabot y foto del contrato | 🟡 | O8 de cgho-ops | Pendiente |
@@ -339,6 +339,14 @@ healthcheck:
   retries: 5
   start_period: 30s
 ```
+
+**Al ejecutarla (2026-11-16).** La comprobación completa tiene un tope de 3 s
+(menor que el del healthcheck y que el del latido): un Postgres que acepta la
+conexión y no contesta se ve como caído. Probado con un proceso real: 200 con
+todo arriba y 503 `{"status": "unavailable"}` al apagar Redis, y el comando
+del healthcheck sale con error en ese caso. **Verificación humana pendiente:**
+en la VM, `docker compose ps` enseña el contenedor `healthy`, y el latido
+`BOT_HEARTBEAT_HEALTHCHECK_URL` de cgho-ops manda `/fail` si se detiene Redis.
 
 ### B10 — Canal de alertas de Meta 🟢
 

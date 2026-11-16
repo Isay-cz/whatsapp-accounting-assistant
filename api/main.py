@@ -2,10 +2,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config import get_settings
+from database import engine
 from routes.webhook import router as webhook_router
 from services.alerts import get_alert_notifier
 from services.buffer import get_redis, message_buffer, session
@@ -83,6 +86,29 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.include_router(webhook_router)
 
 
+# Tope de la comprobación completa. Menor que el `timeout` del healthcheck del
+# compose (5 s) y que el del latido de cgho-ops (10 s): un Postgres colgado
+# tiene que verse como «caído», no dejar la sonda esperando.
+HEALTH_TIMEOUT_SECONDS = 3.0
+
+
+async def _check_dependencies(request: Request) -> None:
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    await request.app.state.redis.ping()
+
+
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    """Sano = puede atender: Postgres y Redis contestan.
+
+    Es lo que vigilan el healthcheck del compose y el latido del sistema de
+    tickets (`BOT_HEARTBEAT_HEALTHCHECK_URL` allá). Queda pública detrás del
+    proxy (`/bot/health`), así que el detalle de la falla va al log y nunca a
+    la respuesta."""
+    try:
+        await asyncio.wait_for(_check_dependencies(request), HEALTH_TIMEOUT_SECONDS)
+    except Exception:
+        logger.exception("Health check falló")
+        return JSONResponse({"status": "unavailable"}, status_code=503)
     return {"status": "ok"}
