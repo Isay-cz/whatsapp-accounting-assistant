@@ -14,7 +14,7 @@ from models.schemas import (
 )
 from services.buffer import message_buffer, session
 from services.llm.base import LLMExtractor
-from services.meta import MetaClient
+from services.meta import LIST_ROW_DESCRIPTION_MAX, LIST_ROW_TITLE_MAX, MetaClient, truncate
 from services.ticket_system import TicketSystemClient
 
 from .description import build_description
@@ -49,6 +49,19 @@ NO_EXTERNAL_USER_TEXT = (
     "No se pudo crear el ticket: tu usuario no está vinculado al sistema de "
     "tickets todavía. Avisa a un administrador."
 )
+
+
+def _client_option(client_id: str, name: str) -> dict[str, str]:
+    """Fila de la lista para un cliente. WhatsApp rechaza el mensaje completo
+    si un título pasa de su límite, así que el nombre se recorta; cuando se
+    recortó, el nombre completo va en la descripción, que es lo que distingue
+    a dos razones sociales que empiezan igual."""
+    title = truncate(name, LIST_ROW_TITLE_MAX)
+    option = {"id": client_id, "title": title}
+    if title != name.strip():
+        option["description"] = truncate(name, LIST_ROW_DESCRIPTION_MAX)
+    return option
+
 
 WorkerLookup = Callable[[str], Awaitable[Worker | None]]
 CreationRecorder = Callable[[TicketCreationLog], Awaitable[None]]
@@ -175,15 +188,13 @@ class ConversationFlow:
         # Siempre se pregunta, incluso con una sola coincidencia: escogerla
         # automáticamente sería adivinar, y un cliente mal asignado en
         # silencio es peor que un ticket sin cliente (CLAUDE.md, decisión #5).
-        options = [
-            {"id": r.id, "title": r.name} for r in results[:MAX_CLIENT_MATCHES]
-        ]
+        options = [_client_option(r.id, r.name) for r in results[:MAX_CLIENT_MATCHES]]
         options.append({"id": NO_CLIENT_OPTION_ID, "title": NO_CLIENT_OPTION_TITLE})
 
-        if len(options) <= 3:
-            await self._meta.send_buttons(phone, "¿Cuál de estos clientes?", options)
-        else:
-            await self._meta.send_list(phone, "¿Cuál de estos clientes?", options)
+        # Siempre por lista, también con una o dos coincidencias: el título de
+        # un botón admite 20 caracteres y no tiene descripción, y más de la
+        # mitad de los clientes reales no cabe ahí.
+        await self._meta.send_list(phone, "¿Cuál de estos clientes?", options)
         # se mantiene en STEP_AWAITING_CLIENT — la respuesta llega por
         # handle_interactive_reply con el client_id real como `id`
 

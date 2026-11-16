@@ -62,7 +62,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 | Orden | Qué | Dif. | Depende de | Estado |
 |---|---|---|---|---|
 | B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | **Hecha (2026-11-16)** |
-| B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | Pendiente (afecta a más de la mitad de los clientes reales) |
+| B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | **Hecha (2026-11-16)**; falta la prueba con el teléfono |
 | B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
 | B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | **Hecha (2026-11-16)** |
 | B5 | Llave de idempotencia y candado al crear el ticket | 🟡 | pareja: O3 de cgho-ops | Pendiente |
@@ -161,6 +161,12 @@ descripción con el nombre completo. `send_list` con título de 25 → `ValueErr
 
 **Verificación humana.** Con el teléfono: un cliente de nombre largo aparece en
 la lista y se puede elegir. Confirmar de paso los límites reales de Meta.
+
+**Al ejecutarla (2026-11-16).** Una diferencia con lo escrito arriba: la
+descripción solo va cuando el título **se recortó**. Con un nombre que cabe,
+repetirlo debajo de sí mismo era ruido en cada fila. La prueba con el teléfono
+sigue pendiente; si Meta cuenta distinto, los tres límites son constantes en
+`services/meta/client.py`.
 
 ### B3 — CI con pruebas y despliegue por tag 🟡
 

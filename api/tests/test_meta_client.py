@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from services.meta.client import MetaClient
+from services.meta.client import (
+    BUTTON_TITLE_MAX,
+    LIST_ROW_DESCRIPTION_MAX,
+    LIST_ROW_TITLE_MAX,
+    MetaClient,
+    truncate,
+)
 
 PHONE_NUMBER_ID = "123456123"
 API_VERSION = "v26.0"
@@ -83,3 +89,47 @@ async def test_send_list_rejects_more_than_ten_options():
     options = [{"id": str(i), "title": str(i)} for i in range(11)]
     with pytest.raises(ValueError):
         await _client().send_list("16315551181", "body", options)
+
+
+async def test_send_list_row_description(httpx_mock):
+    """La descripción es opcional y solo viaja en la fila que la trae."""
+    httpx_mock.add_response(url=EXPECTED_URL, json={"messages": [{"id": "wamid.4"}]})
+    options = [
+        {"id": "c1", "title": "Comercializadora del Ba…", "description": "Comercializadora del Bajío, S.A. de C.V."},
+        {"id": "c2", "title": "Juan Pérez"},
+    ]
+    await _client().send_list("16315551181", "¿Cuál cliente?", options)
+
+    body = json.loads(httpx_mock.get_requests()[0].content)
+    assert body["interactive"]["action"]["sections"][0]["rows"] == [
+        {"id": "c1", "title": "Comercializadora del Ba…", "description": "Comercializadora del Bajío, S.A. de C.V."},
+        {"id": "c2", "title": "Juan Pérez"},
+    ]
+
+
+async def test_send_list_rejects_title_over_limit():
+    """Que falle aquí y no contra Meta, que rechaza el mensaje completo."""
+    options = [{"id": "c1", "title": "x" * (LIST_ROW_TITLE_MAX + 1)}]
+    with pytest.raises(ValueError):
+        await _client().send_list("16315551181", "body", options)
+
+
+async def test_send_list_rejects_description_over_limit():
+    options = [{"id": "c1", "title": "ok", "description": "x" * (LIST_ROW_DESCRIPTION_MAX + 1)}]
+    with pytest.raises(ValueError):
+        await _client().send_list("16315551181", "body", options)
+
+
+async def test_send_buttons_rejects_title_over_limit():
+    options = [{"id": "c1", "title": "x" * (BUTTON_TITLE_MAX + 1)}]
+    with pytest.raises(ValueError):
+        await _client().send_buttons("16315551181", "body", options)
+
+
+def test_truncate():
+    assert truncate("Juan Pérez", 24) == "Juan Pérez"
+    assert truncate("x" * 24, 24) == "x" * 24
+    recortado = truncate("Comercializadora del Bajío SA", 24)
+    assert len(recortado) == 24 and recortado.endswith("…")
+    # Sin espacio colgando antes de los puntos suspensivos.
+    assert truncate("Despacho Contable Hermanos García", 18) == "Despacho Contable…"

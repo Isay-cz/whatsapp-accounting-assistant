@@ -86,7 +86,9 @@ async def test_full_happy_path_single_client_match(redis_client):
     await flow.handle_incoming_message("16315551181", "Juan Perez")
     ticket_system.search_clients.assert_awaited_once_with("Juan Perez")
     # Una sola coincidencia igual se pregunta: escogerla sola sería adivinar.
-    meta.send_buttons.assert_awaited_with(
+    # Y por lista, aunque dos opciones cabrían en botones: el título de un
+    # botón no alcanza para el nombre de un cliente.
+    meta.send_list.assert_awaited_with(
         "16315551181",
         "¿Cuál de estos clientes?",
         [
@@ -136,6 +138,53 @@ async def test_client_matches_are_capped_at_nine_plus_sin_cliente(redis_client):
     options = args[2]
     assert len(options) == 10
     assert options[-1]["id"] == "__sin_cliente__"
+
+
+async def test_nombre_largo_se_recorta_y_va_completo_en_la_descripcion(redis_client):
+    """WhatsApp rechaza la lista entera si un título pasa de 24 caracteres. De
+    los clientes reales, más de la mitad pasa: el título se recorta con «…» y
+    el nombre completo viaja en la descripción."""
+    worker = make_worker()
+    largo = "Comercializadora y Distribuidora del Bajío, S.A. de C.V. (Sucursal)"
+    assert len(largo) > 60
+    flow, llm, meta, ticket_system, recorder = make_flow(
+        redis_client,
+        worker,
+        search_results=[
+            ClientSearchResult(id="c-largo", name=largo),
+            ClientSearchResult(id="c-corto", name="Juan Pérez"),
+        ],
+    )
+
+    await flow.on_buffer_close("16315551197", block("mensaje"))
+    await flow.handle_incoming_message("16315551197", "Comercializadora")
+
+    _, args, _ = meta.send_list.mock_calls[0]
+    fila_larga, fila_corta, sin_cliente = args[2]
+    assert len(fila_larga["title"]) == 24
+    assert fila_larga["title"].endswith("…")
+    assert fila_larga["description"] == largo
+    # Un nombre que cabe no repite su texto en la descripción.
+    assert fila_corta == {"id": "c-corto", "title": "Juan Pérez"}
+    assert sin_cliente == {"id": "__sin_cliente__", "title": "Sin cliente"}
+    meta.send_buttons.assert_not_awaited()
+
+
+async def test_un_nombre_enorme_tambien_cabe_en_la_descripcion(redis_client):
+    worker = make_worker()
+    enorme = "Sociedad " + "Agropecuaria " * 12  # > 72 caracteres
+    flow, llm, meta, ticket_system, recorder = make_flow(
+        redis_client, worker, search_results=[ClientSearchResult(id="c1", name=enorme)]
+    )
+
+    await flow.on_buffer_close("16315551198", block("mensaje"))
+    await flow.handle_incoming_message("16315551198", "Sociedad")
+
+    _, args, _ = meta.send_list.mock_calls[0]
+    fila = args[2][0]
+    assert len(fila["title"]) <= 24
+    assert len(fila["description"]) == 72
+    assert fila["description"].endswith("…")
 
 
 async def test_zero_client_matches_proceeds_with_null_client(redis_client):

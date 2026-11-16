@@ -184,8 +184,8 @@ def interactive_sent(httpx_mock) -> list[dict]:
 
 
 def interactive_with_body(httpx_mock, body_text: str) -> list[dict]:
-    """Localiza el mensaje interactivo por su texto: la confirmación de
-    cliente y la de prioridad pueden llegar ambas como botones."""
+    """Localiza el mensaje interactivo por su texto (la pregunta de cliente
+    o la de prioridad)."""
     return [i for i in interactive_sent(httpx_mock) if i["body"]["text"] == body_text]
 
 
@@ -262,18 +262,19 @@ async def test_mensaje_unico_recorre_el_ciclo_completo(
     await post_webhook(client, text_message_payload("Juan Perez", wamid="wamid.ciclo.2"))
     pregunta_cliente = await wait_for_interactive(httpx_mock, PICK_CLIENT_TEXT)
     # Una sola coincidencia igual se pregunta (decisión #5), y siempre
-    # acompañada de "Sin cliente". Con 2 opciones caben en botones.
-    assert pregunta_cliente["type"] == "button"
-    assert pregunta_cliente["action"]["buttons"] == [
-        {"type": "reply", "reply": {"id": client_id, "title": "Juan Pérez López"}},
-        {"type": "reply", "reply": {"id": "__sin_cliente__", "title": "Sin cliente"}},
+    # acompañada de "Sin cliente". Va por lista aunque sean dos opciones: el
+    # título de un botón no alcanza para el nombre de un cliente.
+    assert pregunta_cliente["type"] == "list"
+    assert pregunta_cliente["action"]["sections"][0]["rows"] == [
+        {"id": client_id, "title": "Juan Pérez López"},
+        {"id": "__sin_cliente__", "title": "Sin cliente"},
     ]
 
     # 5. Escoge el cliente -> se pregunta prioridad por botones.
     await post_webhook(
         client,
         interactive_reply_payload(
-            client_id, wamid="wamid.ciclo.3", reply_type="button_reply", title="Juan Pérez López"
+            client_id, wamid="wamid.ciclo.3", reply_type="list_reply", title="Juan Pérez López"
         ),
     )
     pregunta_prioridad = await wait_for_interactive(httpx_mock, ASK_PRIORITY_TEXT)
@@ -474,7 +475,7 @@ async def test_sin_cliente_en_una_lista_llena_crea_ticket_sin_cliente(
 
     await post_webhook(client, text_message_payload("Servicios", wamid="wamid.sin.2"))
     lista = await wait_for_interactive(httpx_mock, PICK_CLIENT_TEXT)
-    assert lista["type"] == "list"  # más de 3 opciones ya no caben en botones
+    assert lista["type"] == "list"
     rows = lista["action"]["sections"][0]["rows"]
     assert len(rows) == 10  # 9 coincidencias + "Sin cliente", el tope de WhatsApp
     assert rows[-1] == {"id": "__sin_cliente__", "title": "Sin cliente"}

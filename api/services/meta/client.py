@@ -4,6 +4,22 @@ from config import Settings
 
 GRAPH_BASE_URL = "https://graph.facebook.com"
 
+# Límites de los mensajes interactivos, según la documentación de Cloud API.
+# Con un texto más largo Meta rechaza el mensaje completo, así que quien arma
+# las opciones recorta antes (`truncate`) y este cliente se niega a mandar lo
+# que no cabe: que falle en las pruebas y no contra Meta.
+BUTTON_TITLE_MAX = 20
+LIST_ROW_TITLE_MAX = 24
+LIST_ROW_DESCRIPTION_MAX = 72
+
+
+def truncate(text: str, limit: int) -> str:
+    """Recorta `text` a `limit` caracteres; si recortó, termina en «…»."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
 
 class MetaClient:
     """Cliente async de WhatsApp Cloud API (Graph API) — texto y mensajes
@@ -49,6 +65,11 @@ class MetaClient:
         nunca se parsea el texto libre de la respuesta."""
         if not 1 <= len(options) <= 3:
             raise ValueError("send_buttons soporta entre 1 y 3 opciones")
+        for opt in options:
+            if len(opt["title"]) > BUTTON_TITLE_MAX:
+                raise ValueError(
+                    f"El título de un botón admite {BUTTON_TITLE_MAX} caracteres: {opt['title']!r}"
+                )
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
@@ -67,10 +88,27 @@ class MetaClient:
         await self._post(payload)
 
     async def send_list(self, to: str, body: str, options: list[dict], button_label: str = "Elegir") -> None:
-        """`options`: 1 a 10 dicts `{"id": ..., "title": ...}`. El `id` es el
-        UUID real (p. ej. el cliente) que llega en `list_reply.id`."""
+        """`options`: 1 a 10 dicts `{"id": ..., "title": ...}`, con una
+        `description` opcional que WhatsApp pinta debajo del título. El `id`
+        es el UUID real (p. ej. el cliente) que llega en `list_reply.id`."""
         if not 1 <= len(options) <= 10:
             raise ValueError("send_list soporta entre 1 y 10 opciones")
+        rows = []
+        for opt in options:
+            if len(opt["title"]) > LIST_ROW_TITLE_MAX:
+                raise ValueError(
+                    f"El título de una fila admite {LIST_ROW_TITLE_MAX} caracteres: {opt['title']!r}"
+                )
+            row = {"id": opt["id"], "title": opt["title"]}
+            description = opt.get("description")
+            if description:
+                if len(description) > LIST_ROW_DESCRIPTION_MAX:
+                    raise ValueError(
+                        f"La descripción de una fila admite {LIST_ROW_DESCRIPTION_MAX} "
+                        f"caracteres: {description!r}"
+                    )
+                row["description"] = description
+            rows.append(row)
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
@@ -80,9 +118,7 @@ class MetaClient:
                 "body": {"text": body},
                 "action": {
                     "button": button_label,
-                    "sections": [
-                        {"rows": [{"id": opt["id"], "title": opt["title"]} for opt in options]}
-                    ],
+                    "sections": [{"rows": rows}],
                 },
             },
         }
