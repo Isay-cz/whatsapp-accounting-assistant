@@ -174,7 +174,7 @@ scp scripts/*.py <usuario>@<vm>:~/whatsapp-accounting-assistant/scripts/
 ssh <usuario>@<vm> 'cd ~/whatsapp-accounting-assistant/scripts && python3 smoke_test.py all'
 ```
 
-Es la única capa que detecta un `META_APP_SECRET` vacío, un alias de red equivocado o una ruta de proxy faltante — cosas invisibles para pytest que rompen el bot en producción. La salida hacia Meta la recibe `scripts/meta_sink.py` (contenedor local), así que el flujo completo corre de verdad sin número de Cloud API verificado. Detalle en `scripts/README.md`.
+Es la única capa que detecta un alias de red equivocado, una ruta de proxy faltante o un `META_APP_SECRET` que no es el que Meta usa para firmar — cosas invisibles para pytest que rompen el bot en producción. La salida hacia Meta la recibe `scripts/meta_sink.py` (contenedor local), así que el flujo completo corre de verdad sin número de Cloud API verificado. Detalle en `scripts/README.md`.
 
 ---
 

@@ -33,3 +33,11 @@ def test_malformed_header_fails():
 
 def test_internal_auth_header_shape():
     assert internal_auth_header("abc123") == {"Authorization": "Bearer abc123"}
+
+
+def test_empty_secret_never_validates():
+    """Con el secreto vacío, la firma «correcta» la calcula cualquiera: no
+    puede valer aunque coincida."""
+    body = b'{"object": "whatsapp_business_account"}'
+    forged = "sha256=" + hmac.new(b"", body, hashlib.sha256).hexdigest()
+    assert verify_meta_signature("", body, forged) is False

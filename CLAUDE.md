@@ -30,6 +30,7 @@ Bot que recibe mensajes de clientes reenviados por trabajadores del despacho ví
 - **PKs:** UUID en toda tabla.
 - **Timestamps:** `created_at` en toda tabla.
 - **Migraciones:** todo cambio de esquema pasa por Alembic.
+- **El arranque falla sin secretos:** `Settings` (`api/config.py`) rechaza `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `INTERNAL_API_TOKEN` y `TICKET_SYSTEM_BASE_URL` vacíos o con un valor de relleno. Una variable obligatoria nueva se agrega a `REQUIRED_SETTINGS`. Migrar solo necesita `DATABASE_URL`: `db/migrations/env.py` no importa `config`.
 - **Config:** variables de entorno inyectadas directo por Docker Compose (`environment:` en `docker-compose.yml`) — **nunca** `env_file` dentro de `Settings` de pydantic. El `.env` vive solo en el host, para alimentar la interpolación `${VAR}` de `docker-compose.yml`; no se copia ni se monta dentro del contenedor (ver decisión #12).
 - **Plan antes de código** en toda feature no trivial.
 - **Parsing siempre defensivo** en el webhook (`.get()`, nunca acceso directo por llave/índice) — hay campos de payloads reales de Meta que no están en la documentación oficial.
@@ -72,6 +73,7 @@ whatsapp-bot/
 │   ├── routes/
 │   │   └── webhook.py          # dispatcher Cloud API — GET (verify) + POST /webhook
 │   ├── models/
+│   │   ├── base.py              # Base declarativa, aparte para que Alembic no cargue Settings
 │   │   ├── orm.py               # Worker, RawMessage, TicketCreation — únicamente
 │   │   └── schemas.py           # Pydantic: extracción, replies interactivos
 │   ├── services/

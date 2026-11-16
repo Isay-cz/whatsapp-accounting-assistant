@@ -17,7 +17,9 @@ sys.path.insert(0, os.path.abspath(_root_dir))
 sys.path.insert(0, os.path.abspath(os.path.join(_root_dir, 'api')))
 
 # Ahora sys.path apunta a /api, así que los imports NO llevan prefijo "api."
-from database import Base          # noqa
+# `models.base` y no `database`: ese construye `Settings` al importarse, y
+# migrar no debe exigir los secretos de Meta, solo DATABASE_URL.
+from models.base import Base       # noqa
 from models import orm             # noqa: F401 — necesario para que alembic vea los modelos
 
 # ── Config de Alembic ────────────────────────────────────────────────────────

@@ -10,10 +10,12 @@
 #   2. bot_db + bot_role must already exist in the shared Postgres -- created
 #      by ops/create-bot-db.sh from the cgho-ops repo (re-run it whenever that
 #      stack's postgres_data volume is recreated).
-#   3. .env here has real values for POSTGRES-side vars and INTERNAL_API_TOKEN
-#      (must match cgho-ops's .env exactly), and placeholder values for the
-#      META_* vars until the domain/Cloudflare Tunnel situation is resolved --
-#      this test isn't exercising real WhatsApp traffic yet.
+#   3. .env here has real values for the Postgres/Redis URLs, INTERNAL_API_TOKEN
+#      (must match cgho-ops's .env exactly) and the four META_* vars. The
+#      container refuses to start if any of them is empty or a placeholder
+#      (api/config.py): an empty META_APP_SECRET makes the webhook signature
+#      forgeable. On a test VM without a real number, `scripts/smoke_test.py
+#      setup` generates working values and points the output at a local sink.
 
 services:
   api:

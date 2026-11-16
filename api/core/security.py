@@ -8,6 +8,10 @@ def verify_meta_signature(app_secret: str, raw_body: bytes, signature_header: st
     sobre el body crudo, con el App Secret como llave. Formato del header:
     "sha256=<hex digest>".
     """
+    # Con el secreto vacío el HMAC lo reproduce cualquiera: nada es válido. El
+    # arranque ya falla sin él (config.py); esto es la segunda barrera.
+    if not app_secret:
+        return False
     if not signature_header or not signature_header.startswith("sha256="):
         return False
 

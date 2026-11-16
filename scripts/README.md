@@ -11,9 +11,9 @@ Es la capa que falta sobre `api/tests/`:
 | `pytest -m live` | ASGI, en proceso | mock | **real** | **real** |
 | `scripts/smoke_test.py` | **HTTPS público → proxy → contenedor** | sink local | **real** | **real** |
 
-Lo que solo esta capa detecta: un `META_APP_SECRET` vacío, un alias de red
-equivocado, una ruta de proxy faltante, un contenedor que arrancó sin la
-variable que creías. Nada de eso es visible desde pytest, y todo rompe el bot
+Lo que solo esta capa detecta: un alias de red equivocado, una ruta de proxy
+faltante, un contenedor que arrancó con una variable distinta a la que creías.
+(Un `META_APP_SECRET` vacío ya no llega hasta aquí: el bot no arranca sin él.) Nada de eso es visible desde pytest, y todo rompe el bot
 en producción.
 
 ## Archivos

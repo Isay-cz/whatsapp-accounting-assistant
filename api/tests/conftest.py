@@ -22,6 +22,8 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("META_APP_SECRET", "test-app-secret")
 os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
+os.environ.setdefault("META_ACCESS_TOKEN", "test-access-token")
+os.environ.setdefault("META_PHONE_NUMBER_ID", "123456123")
 os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal-token")
 os.environ.setdefault("TICKET_SYSTEM_BASE_URL", "http://ticket-system.test")
 

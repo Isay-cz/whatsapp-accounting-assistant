@@ -1,5 +1,29 @@
-from pydantic_settings import BaseSettings
+import logging
 from functools import lru_cache
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+# Sin cualquiera de estos el bot arranca, pero no funciona o no es seguro: con
+# el App Secret vacío, el HMAC del webhook lo calcula cualquiera. Por eso el
+# arranque falla en vez de avisar.
+REQUIRED_SETTINGS = (
+    "meta_app_secret",
+    "meta_verify_token",
+    "meta_access_token",
+    "meta_phone_number_id",
+    "internal_api_token",
+    "ticket_system_base_url",
+)
+# Valores de relleno que alguien deja "mientras tanto" y se quedan.
+PLACEHOLDER_VALUES = frozenset({"changeme", "placeholder", "xxx"})
+
+
+def _is_unset(value: str) -> bool:
+    cleaned = value.strip().lower()
+    return not cleaned or cleaned in PLACEHOLDER_VALUES
 
 
 class Settings(BaseSettings):
@@ -53,6 +77,31 @@ class Settings(BaseSettings):
     # los mensajes de los clientes. Va aparte de `debug` para que prender uno
     # no vuelque conversaciones al log sin querer. Solo desarrollo.
     sql_echo: bool = False
+
+    @model_validator(mode="after")
+    def _require_secrets(self) -> "Settings":
+        """Falla el arranque antes que atender con un secreto vacío.
+
+        Se evalúa al construir `Settings`, que `main.py` hace al importarse:
+        un despliegue mal configurado muere con un mensaje claro en vez de
+        aceptar webhooks que cualquiera puede firmar."""
+        missing = [
+            name.upper() for name in REQUIRED_SETTINGS if _is_unset(getattr(self, name))
+        ]
+        if missing:
+            raise ValueError(
+                "Faltan variables obligatorias (vacías o con un valor de relleno): "
+                + ", ".join(missing)
+                + ". El bot no arranca sin ellas; ver .env.example."
+            )
+        if _is_unset(self.deepseek_api_key):
+            # No detiene el arranque: sin llave la extracción degrada al título
+            # de respaldo y el ticket se crea igual (CLAUDE.md, decisión #7).
+            logger.warning(
+                "DEEPSEEK_API_KEY vacía: los tickets saldrán con el título de "
+                "respaldo y sin entidades."
+            )
+        return self
 
 
 @lru_cache

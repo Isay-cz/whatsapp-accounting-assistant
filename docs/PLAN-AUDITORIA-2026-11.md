@@ -61,7 +61,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 
 | Orden | Qué | Dif. | Depende de | Estado |
 |---|---|---|---|---|
-| B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | Pendiente |
+| B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | **Hecha (2026-11-16)** |
 | B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | Pendiente (afecta a más de la mitad de los clientes reales) |
 | B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
 | B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | **Hecha (2026-11-16)** |
@@ -116,6 +116,18 @@ prueba; revisar que ninguno caiga en la lista de marcadores.
 
 **Hecho cuando.** La suite pasa y `docker compose up` con un `.env` sin
 `META_APP_SECRET` muere con el mensaje nuevo.
+
+**Al ejecutarla (2026-11-16).** Comprobado arrancando el proceso con
+`META_APP_SECRET` vacío: muere con «Faltan variables obligatorias…». Como
+`db/migrations/env.py` importaba `database` (que construye `Settings`), migrar
+habría empezado a exigir también los secretos de Meta: la `Base` declarativa
+pasó a `api/models/base.py` y Alembic vuelve a necesitar solo `DATABASE_URL`.
+`conftest.py` define ahora `META_ACCESS_TOKEN` y `META_PHONE_NUMBER_ID`.
+
+**Verificación humana pendiente.** En la VM: `docker compose up` con un `.env`
+sin `META_APP_SECRET` deja el contenedor reiniciándose con ese mensaje en el
+log. Antes de desplegar esta versión, revisar que el `.env` del servidor tenga
+las seis variables: un valor vacío que hoy pasa inadvertido tumbaría el bot.
 
 ### B2 — Títulos dentro del límite de WhatsApp 🟢
 
@@ -351,9 +363,9 @@ el de log. Nunca lanza: un fallo al avisar se registra y el webhook responde
 - Comentarios de `docker-compose.yml`, `docker-compose.prod.yml` y
   `scripts/README.md` que daban el túnel por hecho.
 
-Queda para sus órdenes, porque no es solo texto: el comentario de
-`docker-compose.prod.yml` que sugiere valores provisionales para `META_*` (B1) y
-el `TODO` del nombre de la imagen (B3).
+Quedaba para sus órdenes, porque no era solo texto: el comentario de
+`docker-compose.prod.yml` que sugería valores provisionales para `META_*`
+(quitado con B1) y el `TODO` del nombre de la imagen (B3).
 
 ### B12 — Dependabot y foto del contrato 🟡
 

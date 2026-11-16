@@ -70,6 +70,25 @@ async def test_get_verify_handshake_wrong_token(client):
     assert response.status_code == 403
 
 
+async def test_get_verify_handshake_empty_token(client):
+    """Un token vacío nunca verifica, ni siquiera si el configurado también
+    lo estuviera (que el arranque ya impide)."""
+    from config import get_settings
+    from main import app
+
+    app.dependency_overrides[get_settings] = lambda: get_settings().model_copy(
+        update={"meta_verify_token": ""}
+    )
+    try:
+        response = await client.get(
+            "/webhook",
+            params={"hub.mode": "subscribe", "hub.verify_token": "", "hub.challenge": "12345"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 403
+
+
 # -- Dispatcher por field ----------------------------------------------------
 
 

@@ -6,7 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from database import Base
+from models.base import Base
 
 
 class Worker(Base):
@@ -99,7 +99,9 @@ class TicketCreation(Base):
     client_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     external_ticket_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    ticket_number: Mapped[int | None] = mapped_column(Integer)
+    # El índice existe desde la migración c2f81a4d6e70; se declara aquí para
+    # que `alembic revision --autogenerate` no proponga borrarlo.
+    ticket_number: Mapped[int | None] = mapped_column(Integer, index=True)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 

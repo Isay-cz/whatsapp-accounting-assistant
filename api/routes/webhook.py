@@ -1,3 +1,4 @@
+import hmac
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -48,7 +49,12 @@ async def verify_webhook(request: Request, settings: Settings = Depends(get_sett
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
-    if mode == "subscribe" and token == settings.meta_verify_token and challenge is not None:
+    # Un token vacío nunca verifica, aunque el configurado también lo
+    # estuviera; y la comparación es en tiempo constante.
+    token_ok = bool(token) and hmac.compare_digest(
+        token.encode(), settings.meta_verify_token.encode()
+    )
+    if mode == "subscribe" and token_ok and challenge is not None:
         return PlainTextResponse(challenge, status_code=200)
     raise HTTPException(status_code=403, detail="Verificación de webhook fallida")
 
