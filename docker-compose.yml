@@ -35,6 +35,8 @@ services:
     # Sin `ports`: el webhook entra por el Caddy del stack de cgho-ops, no
     # publicando un puerto al host (CLAUDE.md, decisión #17). Publicarlo además
     # chocaba con lo que ya escucha en 8000 en el servidor.
+    # El CMD de la imagen es el de producción; desarrollo lo sobreescribe aquí
+    # para tener recarga en caliente sobre el bind mount de ./api.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       cgho_net:

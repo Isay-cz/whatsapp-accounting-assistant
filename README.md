@@ -178,6 +178,32 @@ Es la única capa que detecta un alias de red equivocado, una ruta de proxy falt
 
 ---
 
+## Desplegar
+
+Un push a `main` **no despliega**: el CI corre las pruebas y publica las imágenes `:main` y `:<sha>`, que nadie usa en el servidor. Lo que despliega es un tag de release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+El CI corre las pruebas; si pasan, publica `:0.1.0` y mueve `:latest`. El WUD del stack de cgho-ops vigila también este contenedor y revisa GHCR una vez por noche, a las 03:00 (CDMX): ve el nuevo `:latest` y recrea el bot. Las migraciones corren solas al arrancar (`api/entrypoint.sh`).
+
+- Para aplicar una versión **ya**: `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`.
+- Un tag con guion (`v0.1.0-rc1`) publica su versión pero **no** mueve `:latest`: sirve para probar una imagen en la VM fijando ese tag.
+- WUD no aplica cambios al compose ni al `.env` (una variable nueva, el healthcheck): esos se copian al servidor y llevan `up -d` a mano.
+- El contenedor **no arranca** si falta alguna variable obligatoria (`META_*`, `INTERNAL_API_TOKEN`, `TICKET_SYSTEM_BASE_URL`): antes de desplegar, revisar el `.env` del servidor contra `.env.example`.
+
+### Volver a la versión anterior
+
+1. En `docker-compose.prod.yml` del servidor, fijar el tag anterior (`image: ghcr.io/isay-cz/whatsapp-accounting-assistant:0.1.0`) **y cambiar la etiqueta a `wud.watch=false`**; si no, WUD lo vuelve a subir en la siguiente revisión.
+2. `docker compose -f docker-compose.prod.yml up -d`.
+3. Arreglar en `main`, publicar un tag nuevo y regresar el compose a `:latest` con `wud.watch=true`.
+
+Volver atrás la imagen no revierte el esquema: si la versión mala migró `bot_db`, el camino es un arreglo hacia adelante.
+
+---
+
 ## Variables de entorno
 
 Ver `.env.example` para la lista completa. Se inyectan por Docker Compose (`environment:`) — nunca `env_file` dentro de `Settings` de pydantic ni `load_dotenv()` en otro lado.

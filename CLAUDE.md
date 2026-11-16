@@ -21,6 +21,7 @@ Bot que recibe mensajes de clientes reenviados por trabajadores del despacho ví
 - **Cache/buffer:** Redis — mismo proceso que el sistema de tickets, namespaced por prefijo de llave (`bot:*`). Usado para el buffer de mensajes (debounce 30-60s) y los timeouts de confirmación (cliente, prioridad) — mismo mecanismo de TTL para ambos casos.
 - **Mensajería:** WhatsApp Cloud API directa (Meta), **no Twilio** — decisión explícita para evitar el cargo adicional de Twilio, asumiendo el trabajo extra de configuración propia.
 - **LLM:** DeepSeek, modelo `deepseek-v4-flash` (el alias `deepseek-chat` se retiró el 24 de julio de 2026 — no usar ese nombre). Posible migración a otro proveedor después; la extracción debe quedar detrás de una sola interfaz/módulo para que cambiar de proveedor no toque el resto del código.
+- **Desplegar es empujar un tag `v*` sin guion:** el CI corre las pruebas y solo entonces mueve `:latest`, que el WUD de cgho-ops aplica a las 03:00. Un push a `main` publica `:main` y `:<sha>` y no llega al servidor (README, «Desplegar»). La imagen arranca `uvicorn` sin `--reload` y con **un solo proceso**: los vigilantes del buffer y el poll de la whitelist viven en memoria, así que nunca `--workers`.
 - **Deploy:** Docker Compose, **stack independiente** del sistema de tickets — ciclo de deploy propio, porque el bot itera más seguido (prompts, proveedor LLM) y no debe requerir tocar el stack de producción del sistema de tickets. Se conecta a Postgres/Redis compartidos vía red Docker externa (`cgho_net`); **no define esos servicios en su propio `docker-compose.yml`.**
 - **Exposición pública:** `api` no publica ningún puerto al host. **Hoy el webhook entra por el Caddy del stack de cgho-ops** (`/bot/*` → `bot-api:8000`; el webhook queda en `/bot/webhook`), que ya administra el certificado. Cloudflare Tunnel fue el plan original y **sigue sin decidirse** (decisión #17): en este repo no existe ningún servicio `cloudflared` ni su configuración.
 
@@ -97,7 +98,7 @@ whatsapp-bot/
 ├── docker-compose.yml            # desarrollo: solo `api` — NO define db/redis, se une a `cgho_net` externa
 ├── docker-compose.prod.yml       # producción: la imagen de GHCR, sin bind mount
 ├── docker-compose.test.yml       # postgres/redis desechables, solo para correr pruebas
-├── .github/workflows/            # build y push de la imagen
+├── .github/workflows/            # pruebas en cada push y PR; la imagen, solo si pasan
 ├── .env.example
 ├── docs/
 │   ├── PLAN-AUDITORIA-2026-11.md # plan vigente (órdenes B* y M*)

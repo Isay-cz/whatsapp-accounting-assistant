@@ -1,21 +1,83 @@
 # .github/workflows/build-and-push.yml (repo del bot)
 #
-# Single image build (the bot is one FastAPI service, no frontend) -- simpler
-# than the ticket system's matrix workflow. Produces:
-#   ghcr.io/<owner>/<bot-repo>:latest
+# Pruebas en cada push y PR; la imagen solo si las pruebas pasan.
+#
+#   push a main       → pruebas + imagen :main y :<sha>   (no se despliega)
+#   tag v0.1.0        → pruebas + imagen :0.1.0 y :latest (WUD la despliega a las 03:00)
+#   pull request      → solo pruebas
+#
+# `:latest` es lo que vigila el WUD del stack de cgho-ops, así que solo se mueve
+# con un tag de release: desplegar es un acto deliberado y no un efecto de cada
+# push. Antes cada push a main llegaba a producción esa noche sin que corriera
+# una sola prueba, y el entrypoint migra solo. Es la misma regla que el sistema
+# de tickets (su decisión #42); los tags de pre-release (v0.1.0-rc1) publican
+# su versión pero no mueven `:latest`. Volver atrás: ver README.md.
+#
+# Una sola imagen (el bot es un servicio FastAPI, sin frontend):
+#   ghcr.io/<owner>/<repo-del-bot>
 
-name: Build and push Docker image
+name: CI
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
+  pull_request:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bot_test
+          POSTGRES_PASSWORD: bot_test
+          POSTGRES_DB: bot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bot_test -d bot_test" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    env:
+      # Los mismos que docker-compose.test.yml, en los puertos por default. Lo
+      # demás que `Settings` exige lo define tests/conftest.py.
+      DATABASE_URL: postgresql://bot_test:bot_test@localhost:5432/bot_test
+      REDIS_URL: redis://localhost:6379/1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r api/requirements-dev.txt
+
+      # Desde la raíz, que es donde vive alembic.ini. Migrar desde cero en cada
+      # corrida también prueba las migraciones.
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        working-directory: api
+        run: pytest -q
+
   build-and-push:
+    # Ninguna imagen se publica si fallan las pruebas.
+    needs: [tests]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,13 +85,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -37,15 +99,21 @@ jobs:
 
       - name: Extract metadata (tags)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `latest` explícito y no automático: solo con un tag de release que
+          # no sea pre-release (sin guion: v0.1.0 sí, v0.1.0-rc1 no).
+          flavor: |
+            latest=false
           tags: |
-            type=raw,value=latest
-            type=sha,prefix=,format=short
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./api/Dockerfile

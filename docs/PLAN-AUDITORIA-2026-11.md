@@ -63,7 +63,7 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 |---|---|---|---|---|
 | B1 | El arranque falla sin secretos; firma con secreto vacío siempre inválida | 🟢 | — | **Hecha (2026-11-16)** |
 | B2 | Títulos de botones y listas dentro del límite de WhatsApp | 🟢 | — | **Hecha (2026-11-16)**; falta la prueba con el teléfono |
-| B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | Pendiente |
+| B3 | CI con pruebas, `:latest` solo por tag, imagen sin `--reload` | 🟡 | — | **Hecha (2026-11-16)**; falta verla correr en GitHub y empujar el primer tag |
 | B4 | Defaults de configuración: versión de Graph API, `DEBUG`, Redis con usuario | 🟢 | pareja: O4 de cgho-ops | **Hecha (2026-11-16)** |
 | B5 | Llave de idempotencia y candado al crear el ticket | 🟡 | pareja: O3 de cgho-ops | Pendiente |
 | B6 | Validar las respuestas interactivas contra el paso | 🟢 | — | **Hecha (2026-11-16)** |
@@ -196,6 +196,12 @@ tickets ya cerró (su decisión #42). Además `api/Dockerfile` termina en
 
 **Verificación humana.** Después de fusionar, `:latest` ya no se mueve sola: hay
 que empujar el primer tag (`v0.1.0`) para desplegar.
+
+**Al ejecutarla (2026-11-16).** Los pasos del job `tests` se corrieron a mano
+en el mismo orden y con las mismas dos variables, sobre una base vacía: migra
+desde cero y pasan las 128 pruebas. El workflow en sí **no se ha visto correr
+en GitHub** (no hay forma de ejecutarlo fuera de ahí): revisar la primera
+corrida. Usa las mismas versiones de las actions que el CI de cgho-ops.
 
 ### B4 — Defaults de configuración 🟢
 

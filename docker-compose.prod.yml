@@ -19,7 +19,8 @@
 
 services:
   api:
-    # TODO: fill in your real owner/repo once build-and-push.yml has run once.
+    # `:latest` solo se mueve con un tag de release v* (ver
+    # .github/workflows/build-and-push.yml): un push a main no llega aquí.
     image: ghcr.io/isay-cz/whatsapp-accounting-assistant:latest
     restart: unless-stopped
     # Mismo criterio que el stack de cgho-ops: el driver por defecto crece sin
@@ -66,8 +67,9 @@ services:
       retries: 5
       # Las migraciones corren antes de levantar uvicorn (entrypoint.sh).
       start_period: 30s
-    # No bind mount (code is baked into the image) and no --reload command
-    # override -- the image's own CMD/entrypoint runs as built.
+    # No bind mount (code is baked into the image) and no command override --
+    # the image's own CMD/entrypoint runs as built (uvicorn without --reload,
+    # single process).
     # Still no "ports" -- consistent with CLAUDE.md decision #17. The webhook
     # comes in through the Caddy of the cgho-ops stack (/bot/webhook).
     networks:
