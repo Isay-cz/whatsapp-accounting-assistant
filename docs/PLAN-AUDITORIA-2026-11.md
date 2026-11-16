@@ -83,6 +83,20 @@ esquema o varios archivos · 🔴 requiere sesión supervisada.
 Orden sugerido: B1, B2, B4, B6, B9, B10 (rápidas) → B3 → B5 → B7 → B8 →
 M1…M5 → B12, B13.
 
+**Estado al 2026-11-16.** Hechas las rápidas y B3; sigue B5 (con la O3 de
+cgho-ops). Lo que cada orden hecha dejó para verificar con el servidor o el
+teléfono está en su apartado («Verificación humana»), y junto:
+
+1. Revisar el `.env` del servidor contra `.env.example` **antes** de desplegar:
+   con B1 el contenedor no arranca si falta una variable obligatoria.
+2. Ver correr el workflow en GitHub y empujar el primer tag (`v0.1.0`): con B3,
+   `:latest` ya no se mueve con un push a `main`.
+3. Copiar `docker-compose.prod.yml` al servidor y `up -d` a mano (WUD no
+   aplica cambios al compose): trae el healthcheck, `ALERTS_HEALTHCHECK_URL` y
+   la versión de Graph API.
+4. Dar de alta el check de alertas en healthchecks.io (B10).
+5. Con el teléfono: un cliente de nombre largo en la lista (B2).
+
 ---
 
 ## 1. Endurecimiento
@@ -305,6 +319,15 @@ buffer.
 **Pruebas nuevas.** Mismo `wamid` dos veces a la vez → 200 las dos y una sola
 fila. Fila sin `processed_at` al arrancar → se reprocesa y queda marcada. Bloque
 con un `wamid` repetido → el texto aparece una vez en la descripción.
+
+**Anotado el 2026-11-16, para la migración de esta orden.** `alembic check`
+enseña una diferencia entre el modelo y la base: `ticket_creations.created_at`
+es `NOT NULL` en el modelo y admite nulos en la base (la migración
+`c2f81a4d6e70` la creó con `nullable=True`). Nunca hay nulos, porque tiene
+default; conviene cerrarla con un `SET NOT NULL` en la misma migración que
+agrega `processed_at`. Y `workers.role` no la escribe ni la lee nadie desde
+que la whitelist llega por el poll (decisión #15): se puede retirar ahí mismo
+o dejarla; no estorba.
 
 ### B8 — Ventana de reintento y sesiones que no se pisan 🟡
 
